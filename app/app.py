@@ -649,6 +649,7 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     title_style = styles["Title"]
     title_style.fontName = "Helvetica-Bold"
     title_style.fontSize = 18
+    title_style.alignment = 2
     normal = styles["BodyText"]
     normal.fontName = "Helvetica"
     normal.fontSize = 10
@@ -670,9 +671,28 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
             ],
         )
     )
-    story.append(Paragraph(business_block, normal))
-    story.append(Spacer(1, 0.15 * inch))
-    story.append(Paragraph(f"Estimate {payload.get('estimate_number', '')}", title_style))
+    header_table = Table(
+        [
+            [
+                Paragraph(business_block, normal),
+                Paragraph(f"Estimate {payload.get('estimate_number', '')}", title_style),
+            ]
+        ],
+        colWidths=[4.6 * inch, 2.2 * inch],
+    )
+    header_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    story.append(header_table)
     story.append(Spacer(1, 0.1 * inch))
 
     details_table = Table(
@@ -700,23 +720,24 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     story.append(details_table)
     story.append(Spacer(1, 0.2 * inch))
 
-    item_rows = [["Category", "Description / Notes", "Qty", "Unit Price", "Line Total"]]
+    item_rows = [["Category", "Description", "Notes", "Qty", "Unit Price", "Line Total"]]
     for item in payload.get("line_items", []):
-        description_bits = [str(item.get("Description", "")).strip()]
-        notes = str(item.get("Notes", "")).strip()
-        if notes:
-            description_bits.append(f"Notes: {notes}")
+        qty_display = f"{to_decimal(item.get('Qty', 0)).quantize(Decimal('1'), rounding=ROUND_HALF_UP)}"
         item_rows.append(
             [
                 item.get("Category", ""),
-                "\n".join([bit for bit in description_bits if bit]),
-                str(item.get("Qty", "")),
+                str(item.get("Description", "")).strip(),
+                str(item.get("Notes", "")).strip(),
+                qty_display,
                 money(item.get("Unit Price", 0)),
                 money(item.get("Line Total", 0)),
             ]
         )
 
-    items_table = Table(item_rows, colWidths=[1.2 * inch, 2.8 * inch, 0.7 * inch, 1.0 * inch, 1.0 * inch])
+    items_table = Table(
+        item_rows,
+        colWidths=[1.15 * inch, 2.15 * inch, 1.55 * inch, 0.45 * inch, 0.85 * inch, 0.85 * inch],
+    )
     items_table.setStyle(
         TableStyle(
             [
@@ -726,7 +747,7 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
+                ("ALIGN", (3, 1), (-1, -1), "RIGHT"),
                 ("PADDING", (0, 0), (-1, -1), 5),
             ]
         )
