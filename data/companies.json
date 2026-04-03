@@ -54,37 +54,58 @@
         {
           "product_id": "None",
           "Category": "Hot Entree",
-          "Description": "Stir-Fry Peruvian Lomo Saltado w/ Steamed Rice & French Fries",
-          "Notes": "None",
-          "Unit Price": 22.0
+          "Description": "Stir-Fry Peruvian Lomo Saltado",
+          "Notes": "Per Guest",
+          "Unit Price": 18.0
         },
         {
           "product_id": "product-1",
           "Category": "Sides",
           "Description": "Papa A La Huancaina",
-          "Notes": "None",
+          "Notes": "Per Guest",
           "Unit Price": 6.0
         },
         {
           "product_id": "product-2",
           "Category": "Fruits",
           "Description": "Papaya, Mango",
-          "Notes": "None",
+          "Notes": "Per Guest",
           "Unit Price": 3.0
         },
         {
           "product_id": "product-3",
           "Category": "Appetizers",
           "Description": "Beef Empanadas w/ Chimichurri",
-          "Notes": "None",
+          "Notes": "Per Guest",
           "Unit Price": 5.0
         },
         {
           "product_id": "product-4",
           "Category": "Salads",
           "Description": "Asian Fusion Salad Mixed Greens",
-          "Notes": "None",
+          "Notes": "Per Guest",
           "Unit Price": 4.0
+        },
+        {
+          "product_id": "product-5",
+          "Category": "Sides",
+          "Description": "French Fries",
+          "Notes": "Per Guest",
+          "Unit Price": 3.0
+        },
+        {
+          "product_id": "product-6",
+          "Category": "Sides",
+          "Description": "Steamed Rice",
+          "Notes": "Per Guest",
+          "Unit Price": 2.0
+        },
+        {
+          "product_id": "product-7",
+          "Category": "Service",
+          "Description": "Service Fee",
+          "Notes": "Flat Fee",
+          "Unit Price": 150.0
         }
       ],
       "clients": [

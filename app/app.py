@@ -27,6 +27,15 @@ HEADER_LOGO_FILE = PROJECT_ROOT / "images" / "logo_header.png"
 
 TWOPLACES = Decimal("0.01")
 NEW_COMPANY_OPTION = "Create new company"
+GUEST_COUNT_DEFAULT_CATEGORIES = {
+    "hot entree",
+    "cold entree",
+    "sides",
+    "salads",
+    "appetizers",
+    "desserts",
+    "fruits",
+}
 
 DEFAULT_SETTINGS = {
     "business_name": "Premium Dynasty Catering",
@@ -83,6 +92,10 @@ def normalize_product_name(value: str) -> str:
 
 def normalize_client_name(value: str) -> str:
     return value.strip().casefold()
+
+
+def uses_guest_count_default(category: str) -> bool:
+    return category.strip().casefold() in GUEST_COUNT_DEFAULT_CATEGORIES
 
 
 def next_product_id(products: list[dict[str, Any]]) -> str:
@@ -872,7 +885,7 @@ loaded_estimate = st.session_state.get("loaded_estimate", {})
 st.title("🧾 Catering Estimate Maker")
 st.caption("Internal estimate builder with reusable companies, JSON persistence, and same-page PDF download.")
 
-company_tab, products_tab, clients_tab, estimate2_tab = st.tabs(
+company_tab, products_tab, clients_tab, estimate_tab = st.tabs(
     ["Company", "Products", "Clients", "Estimate"]
 )
 
@@ -1036,70 +1049,74 @@ with clients_tab:
         st.success(f"Saved clients for {updated_company['business_name']}.")
         st.rerun()
 
-with estimate2_tab:
+with estimate_tab:
     st.subheader("Estimate")
     st.caption("Clean estimate generator using the selected company, client, and products.")
     if not company_names:
         st.warning("Create a company first before building estimates.")
         st.stop()
 
-    estimate2_company_name = st.selectbox(
+    estimate_builder_company_name = st.selectbox(
         "Company",
         options=company_names,
         index=company_names.index(company_store["selected_company"]) if company_store["selected_company"] in company_names else 0,
-        key="estimate2_company_name",
+        key="estimate_builder_company_name",
     )
-    estimate2_company = find_company(companies, estimate2_company_name)
-    assert estimate2_company is not None
+    estimate_builder_company = find_company(companies, estimate_builder_company_name)
+    assert estimate_builder_company is not None
 
-    estimate2_clients = estimate2_company.get("clients", [])
-    if not estimate2_clients:
+    estimate_builder_clients = estimate_builder_company.get("clients", [])
+    if not estimate_builder_clients:
         st.warning("Add at least one client in the Clients tab before building an estimate for this company.")
         st.stop()
 
-    estimate2_client_lookup = {client["client_id"]: client for client in estimate2_clients}
-    estimate2_client_options = [client["client_id"] for client in estimate2_clients]
-    estimate2_client_id = st.selectbox(
+    estimate_builder_client_lookup = {client["client_id"]: client for client in estimate_builder_clients}
+    estimate_builder_client_options = [client["client_id"] for client in estimate_builder_clients]
+    estimate_builder_client_id = st.selectbox(
         "Client",
-        options=estimate2_client_options,
+        options=estimate_builder_client_options,
         index=0,
-        key="estimate2_client_id",
-        format_func=lambda client_id: client_label(estimate2_client_lookup[client_id]),
+        key="estimate_builder_client_id",
+        format_func=lambda client_id: client_label(estimate_builder_client_lookup[client_id]),
     )
-    estimate2_client = estimate2_client_lookup[estimate2_client_id]
+    estimate_builder_client = estimate_builder_client_lookup[estimate_builder_client_id]
 
-    estimate2_products = estimate2_company.get("products", [])
-    if not estimate2_products:
+    estimate_builder_products = estimate_builder_company.get("products", [])
+    if not estimate_builder_products:
         st.warning("Add at least one product in the Products tab before building an estimate for this company.")
         st.stop()
 
-    estimate2_product_lookup = {product["product_id"]: product for product in estimate2_products}
-    estimate2_product_options = [product["product_id"] for product in estimate2_products]
-    estimate2_selected_products = st.multiselect(
+    estimate_builder_product_lookup = {product["product_id"]: product for product in estimate_builder_products}
+    estimate_builder_product_options = [product["product_id"] for product in estimate_builder_products]
+    estimate_builder_selected_products = st.multiselect(
         "Products",
-        options=estimate2_product_options,
-        key=f"estimate2_selected_products__{estimate2_company_name}__{estimate2_client_id}",
-        format_func=lambda product_id: product_label(estimate2_product_lookup[product_id]),
+        options=estimate_builder_product_options,
+        key=f"estimate_builder_selected_products__{estimate_builder_company_name}__{estimate_builder_client_id}",
+        format_func=lambda product_id: product_label(estimate_builder_product_lookup[product_id]),
     )
 
-    event_date_raw = str(estimate2_client.get("event_date", "")).strip()
-    estimate2_event_date = date.fromisoformat(event_date_raw) if event_date_raw else date.today()
-    estimate2_event_type = str(estimate2_client.get("event_type", "Private Event")).strip() or "Private Event"
-    estimate2_venue = str(estimate2_client.get("venue", "")).strip()
-    estimate2_guest_count = int(estimate2_client.get("guest_count", 50) or 50)
+    event_date_raw = str(estimate_builder_client.get("event_date", "")).strip()
+    estimate_builder_event_date = date.fromisoformat(event_date_raw) if event_date_raw else date.today()
+    estimate_builder_event_type = str(estimate_builder_client.get("event_type", "Private Event")).strip() or "Private Event"
+    estimate_builder_venue = str(estimate_builder_client.get("venue", "")).strip()
+    estimate_builder_guest_count = int(estimate_builder_client.get("guest_count", 50) or 50)
 
-    estimate2_line_items: list[dict[str, Any]] = []
-    if estimate2_selected_products:
+    estimate_builder_line_items: list[dict[str, Any]] = []
+    if estimate_builder_selected_products:
         st.markdown("#### Products Table")
-        estimate2_rows: list[dict[str, Any]] = []
-        for product_id in estimate2_selected_products:
-            product = estimate2_product_lookup[product_id]
-            qty_key = f"estimate2_qty__{estimate2_company_name}__{estimate2_client_id}__{product_id}"
+        estimate_builder_rows: list[dict[str, Any]] = []
+        for product_id in estimate_builder_selected_products:
+            product = estimate_builder_product_lookup[product_id]
+            qty_key = f"estimate_builder_qty__{estimate_builder_company_name}__{estimate_builder_client_id}__{product_id}"
             if qty_key not in st.session_state:
-                st.session_state[qty_key] = 1.0
+                st.session_state[qty_key] = (
+                    float(estimate_builder_guest_count)
+                    if uses_guest_count_default(str(product.get("Category", "")))
+                    else 1.0
+                )
             qty_decimal = to_decimal(st.session_state[qty_key])
             unit_price_decimal = to_decimal(product.get("Unit Price", 0))
-            estimate2_rows.append(
+            estimate_builder_rows.append(
                 {
                     "product_id": product_id,
                     "Category": product.get("Category", ""),
@@ -1111,13 +1128,13 @@ with estimate2_tab:
                 }
             )
 
-        estimate2_df = pd.DataFrame(estimate2_rows)
-        edited_estimate2_df = st.data_editor(
-            estimate2_df[["Category", "Description", "Notes", "Qty", "Unit Price", "Line Total"]],
+        estimate_builder_df = pd.DataFrame(estimate_builder_rows)
+        edited_estimate_builder_df = st.data_editor(
+            estimate_builder_df[["Category", "Description", "Notes", "Qty", "Unit Price", "Line Total"]],
             use_container_width=True,
             hide_index=True,
             num_rows="fixed",
-            key=f"estimate2_products_table__{estimate2_company_name}__{estimate2_client_id}",
+            key=f"estimate_builder_products_table__{estimate_builder_company_name}__{estimate_builder_client_id}",
             disabled=["Category", "Description", "Notes", "Unit Price", "Line Total"],
             column_config={
                 "Qty": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0, format="%.2f"),
@@ -1125,13 +1142,13 @@ with estimate2_tab:
                 "Line Total": st.column_config.NumberColumn("Line Total", format="$%.2f"),
             },
         )
-        for index, product_id in enumerate(estimate2_selected_products):
-            qty_key = f"estimate2_qty__{estimate2_company_name}__{estimate2_client_id}__{product_id}"
-            qty_value = to_decimal(edited_estimate2_df.iloc[index]["Qty"])
+        for index, product_id in enumerate(estimate_builder_selected_products):
+            qty_key = f"estimate_builder_qty__{estimate_builder_company_name}__{estimate_builder_client_id}__{product_id}"
+            qty_value = to_decimal(edited_estimate_builder_df.iloc[index]["Qty"])
             st.session_state[qty_key] = float(qty_value)
-            product = estimate2_product_lookup[product_id]
+            product = estimate_builder_product_lookup[product_id]
             unit_price_decimal = to_decimal(product.get("Unit Price", 0))
-            estimate2_line_items.append(
+            estimate_builder_line_items.append(
                 {
                     "product_id": product_id,
                     "Category": product.get("Category", ""),
@@ -1145,46 +1162,46 @@ with estimate2_tab:
     else:
         st.info("Select one or more products to build this estimate.")
 
-    estimate2_totals = calculate_totals(estimate2_line_items, 0.0, 0.0, 0.0, 0.0)
+    estimate_builder_totals = calculate_totals(estimate_builder_line_items, 0.0, 0.0, 0.0, 0.0)
 
-    if "estimate2_number" not in st.session_state:
-        st.session_state["estimate2_number"] = next_estimate_number()
+    if "estimate_builder_number" not in st.session_state:
+        st.session_state["estimate_builder_number"] = next_estimate_number()
 
-    estimate2_form_data = {
-        "client_id": estimate2_client_id,
+    estimate_builder_form_data = {
+        "client_id": estimate_builder_client_id,
         "issue_date": date.today().isoformat(),
-        "client_name": estimate2_client.get("client_name", ""),
-        "client_email": estimate2_client.get("client_email", ""),
-        "client_phone": estimate2_client.get("client_phone", ""),
-        "event_date": estimate2_event_date.isoformat(),
-        "event_type": estimate2_event_type,
-        "venue": estimate2_venue,
-        "guest_count": estimate2_guest_count,
+        "client_name": estimate_builder_client.get("client_name", ""),
+        "client_email": estimate_builder_client.get("client_email", ""),
+        "client_phone": estimate_builder_client.get("client_phone", ""),
+        "event_date": estimate_builder_event_date.isoformat(),
+        "event_type": estimate_builder_event_type,
+        "venue": estimate_builder_venue,
+        "guest_count": estimate_builder_guest_count,
         "tax_percent": 0.0,
         "service_charge_percent": 0.0,
         "gratuity_percent": 0.0,
         "notes": "",
     }
-    estimate2_payload = build_estimate_payload(
-        estimate2_company,
-        estimate2_form_data,
-        estimate2_line_items,
-        estimate2_totals,
-        existing_number=st.session_state["estimate2_number"],
+    estimate_builder_payload = build_estimate_payload(
+        estimate_builder_company,
+        estimate_builder_form_data,
+        estimate_builder_line_items,
+        estimate_builder_totals,
+        existing_number=st.session_state["estimate_builder_number"],
     )
-    estimate2_pdf_bytes = estimate_to_pdf_bytes(estimate2_payload)
+    estimate_builder_pdf_bytes = estimate_to_pdf_bytes(estimate_builder_payload)
 
     e2b1, e2b2 = st.columns([1, 1.4])
     with e2b1:
-        if st.button("Start New Estimate2", use_container_width=True):
-            st.session_state["estimate2_number"] = next_estimate_number()
+        if st.button("Start New Estimate", use_container_width=True):
+            st.session_state["estimate_builder_number"] = next_estimate_number()
             st.rerun()
     with e2b2:
         st.download_button(
             "Download Estimate PDF",
-            data=estimate2_pdf_bytes,
-            file_name=f"{estimate2_payload['estimate_number']}_{sanitize_filename(estimate2_client.get('client_name', 'client'))}.pdf",
+            data=estimate_builder_pdf_bytes,
+            file_name=f"{estimate_builder_payload['estimate_number']}_{sanitize_filename(estimate_builder_client.get('client_name', 'client'))}.pdf",
             mime="application/pdf",
             use_container_width=True,
-            disabled=not bool(estimate2_line_items),
+            disabled=not bool(estimate_builder_line_items),
         )
