@@ -1,0 +1,16 @@
+[Unit]
+Description=Office (Streamlit)
+After=network.target
+
+[Service]
+Type=simple
+User=anthonym650
+Group=anthonym650
+WorkingDirectory=/opt/webapps/sites/office
+Environment="PATH=/opt/webapps/sites/office/.venv/bin"
+ExecStart=/opt/webapps/sites/office/.venv/bin/streamlit run app/app.py --server.address 127.0.0.1 --server.port 8507 --server.headless true
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

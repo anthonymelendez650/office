@@ -1,0 +1,11 @@
+{
+  "business_name": "Premium Dynasty Catering",
+  "business_email": "office@premiumdynasty.com",
+  "business_phone": "",
+  "business_address": "",
+  "default_tax_percent": 0.0,
+  "default_service_charge_percent": 0.0,
+  "default_gratuity_percent": 0.0,
+  "payment_terms": "50% deposit due upon approval. Final balance due before the event.",
+  "estimate_notes": "Thank you for the opportunity to cater your event."
+}
