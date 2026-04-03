@@ -1,0 +1,104 @@
+{
+  "selected_company": "Silverspoon Catering",
+  "companies": [
+    {
+      "business_name": "Premium Dynasty Catering",
+      "business_email": "office@premiumdynasty.com",
+      "business_phone": "",
+      "business_address": "",
+      "default_tax_percent": 0.0,
+      "default_service_charge_percent": 0.0,
+      "default_gratuity_percent": 0.0,
+      "payment_terms": "50% deposit due upon approval. Final balance due before the event.",
+      "estimate_notes": "Thank you for the opportunity to cater your event.",
+      "products": [],
+      "clients": []
+    },
+    {
+      "business_name": "Jeme",
+      "business_email": "jeme@gmail.com",
+      "business_phone": "650",
+      "business_address": "address",
+      "default_tax_percent": 0.0,
+      "default_service_charge_percent": 0.0,
+      "default_gratuity_percent": 0.0,
+      "payment_terms": "50% deposit due upon approval. Final balance due before the event.",
+      "estimate_notes": "Thank you for the opportunity to cater your event.",
+      "products": [],
+      "clients": []
+    },
+    {
+      "business_name": "anthony",
+      "business_email": "office@premiumdynasty.com",
+      "business_phone": "6504",
+      "business_address": "",
+      "default_tax_percent": 0.0,
+      "default_service_charge_percent": 0.0,
+      "default_gratuity_percent": 0.0,
+      "payment_terms": "50% deposit due upon approval. Final balance due before the event.",
+      "estimate_notes": "Thank you for the opportunity to cater your event.",
+      "products": [],
+      "clients": []
+    },
+    {
+      "business_name": "Silverspoon Catering",
+      "business_email": "silverspoonpe@gmail.com",
+      "business_phone": "(650) 863-7435",
+      "business_address": "1664 Maywood Ave, Manteca CA 95336",
+      "default_tax_percent": 0.0,
+      "default_service_charge_percent": 0.0,
+      "default_gratuity_percent": 0.0,
+      "payment_terms": "50% deposit due upon approval. Final balance due before the event.",
+      "estimate_notes": "Thank you for the opportunity to cater your event. Silverspoon Catering will provide all items for the buffet including chafers, linens, utensils, and decorations.",
+      "products": [
+        {
+          "product_id": "None",
+          "Category": "Hot Entree",
+          "Description": "Stir-Fry Peruvian Lomo Saltado w/ Steamed Rice & French Fries",
+          "Notes": "None",
+          "Unit Price": 22.0
+        },
+        {
+          "product_id": "product-1",
+          "Category": "Sides",
+          "Description": "Papa A La Huancaina",
+          "Notes": "None",
+          "Unit Price": 6.0
+        },
+        {
+          "product_id": "product-2",
+          "Category": "Fruits",
+          "Description": "Papaya, Mango",
+          "Notes": "None",
+          "Unit Price": 3.0
+        },
+        {
+          "product_id": "product-3",
+          "Category": "Appetizers",
+          "Description": "Beef Empanadas w/ Chimichurri",
+          "Notes": "None",
+          "Unit Price": 5.0
+        },
+        {
+          "product_id": "product-4",
+          "Category": "Salads",
+          "Description": "Asian Fusion Salad Mixed Greens",
+          "Notes": "None",
+          "Unit Price": 4.0
+        }
+      ],
+      "clients": [
+        {
+          "client_id": "None",
+          "client_name": "Perla Aramburu",
+          "client_email": "None",
+          "client_phone": "None",
+          "event_type": "Private Event",
+          "event_date": "",
+          "venue": "",
+          "guest_count": 50
+        }
+      ]
+    }
+  ]
+}
