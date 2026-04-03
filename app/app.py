@@ -582,6 +582,14 @@ def build_estimate_editor_rows(
     return rows
 
 
+def line_item_qty_map(line_items: list[dict[str, Any]]) -> dict[str, float]:
+    return {
+        str(item.get("product_id", "")).strip(): float(to_decimal(item.get("Qty", 0)))
+        for item in line_items
+        if str(item.get("product_id", "")).strip()
+    }
+
+
 def line_items_to_rows(df: pd.DataFrame, company: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for _, row in df.iterrows():
@@ -864,7 +872,9 @@ loaded_estimate = st.session_state.get("loaded_estimate", {})
 st.title("🧾 Catering Estimate Maker")
 st.caption("Internal estimate builder with reusable companies, JSON persistence, and same-page PDF download.")
 
-company_tab, products_tab, clients_tab, estimate_tab = st.tabs(["Company", "Products", "Clients", "Estimate"])
+company_tab, products_tab, clients_tab, estimate2_tab = st.tabs(
+    ["Company", "Products", "Clients", "Estimate"]
+)
 
 with company_tab:
     st.subheader("Company settings")
@@ -1026,165 +1036,155 @@ with clients_tab:
         st.success(f"Saved clients for {updated_company['business_name']}.")
         st.rerun()
 
-with estimate_tab:
+with estimate2_tab:
     st.subheader("Estimate")
+    st.caption("Clean estimate generator using the selected company, client, and products.")
     if not company_names:
         st.warning("Create a company first before building estimates.")
         st.stop()
 
-    render_saved_estimate_loader()
-
-    preferred_company_name = (
-        loaded_estimate.get("company_name")
-        or loaded_estimate.get("business", {}).get("business_name", "")
-        or company_store["selected_company"]
-        or company_names[0]
-    )
-    if preferred_company_name not in company_names:
-        preferred_company_name = company_names[0]
-
-    selected_company_name = st.selectbox(
+    estimate2_company_name = st.selectbox(
         "Company",
         options=company_names,
-        index=company_names.index(preferred_company_name),
+        index=company_names.index(company_store["selected_company"]) if company_store["selected_company"] in company_names else 0,
+        key="estimate2_company_name",
     )
-    selected_company = find_company(companies, selected_company_name)
-    assert selected_company is not None
+    estimate2_company = find_company(companies, estimate2_company_name)
+    assert estimate2_company is not None
 
-    sync_estimate_form(selected_company, loaded_estimate)
-    if not selected_company.get("clients", []):
-        st.warning("Add at least one client in the Clients tab before creating an estimate for this company.")
+    estimate2_clients = estimate2_company.get("clients", [])
+    if not estimate2_clients:
+        st.warning("Add at least one client in the Clients tab before building an estimate for this company.")
         st.stop()
 
-    available_clients = selected_company.get("clients", [])
-    client_lookup = {client["client_id"]: client for client in available_clients}
-    client_options = [client["client_id"] for client in available_clients]
-    selected_client_id = str(st.session_state.get("estimate_client_id", "")).strip()
-    if selected_client_id not in client_lookup:
-        selected_client_id = ""
-        st.session_state["estimate_client_id"] = ""
-        st.session_state["estimate_client_name"] = ""
-        st.session_state["estimate_client_email"] = ""
-        st.session_state["estimate_client_phone"] = ""
-
-    chosen_client_id = st.selectbox(
+    estimate2_client_lookup = {client["client_id"]: client for client in estimate2_clients}
+    estimate2_client_options = [client["client_id"] for client in estimate2_clients]
+    estimate2_client_id = st.selectbox(
         "Client",
-        options=[""] + client_options,
-        index=([""] + client_options).index(selected_client_id),
-        key="estimate_client_id",
-        format_func=lambda client_id: "Select a client..." if client_id == "" else client_label(client_lookup[client_id]),
+        options=estimate2_client_options,
+        index=0,
+        key="estimate2_client_id",
+        format_func=lambda client_id: client_label(estimate2_client_lookup[client_id]),
     )
-    chosen_client = client_lookup.get(chosen_client_id)
-    if not chosen_client:
-        st.info("Select a client to continue this estimate.")
+    estimate2_client = estimate2_client_lookup[estimate2_client_id]
+
+    estimate2_products = estimate2_company.get("products", [])
+    if not estimate2_products:
+        st.warning("Add at least one product in the Products tab before building an estimate for this company.")
         st.stop()
 
-    st.session_state["estimate_client_name"] = chosen_client.get("client_name", "")
-    st.session_state["estimate_client_email"] = chosen_client.get("client_email", "")
-    st.session_state["estimate_client_phone"] = chosen_client.get("client_phone", "")
-
-    issue_date = date.today()
-    client_name = st.session_state["estimate_client_name"]
-    client_email = st.session_state["estimate_client_email"]
-    client_phone = st.session_state["estimate_client_phone"]
-    event_date_raw = str(chosen_client.get("event_date", "")).strip()
-    event_date = date.fromisoformat(event_date_raw) if event_date_raw else date.today()
-    event_type = str(chosen_client.get("event_type", "Private Event")).strip() or "Private Event"
-    venue = str(chosen_client.get("venue", "")).strip()
-    guest_count = int(chosen_client.get("guest_count", 50) or 50)
-    tax_percent = 0.0
-    service_charge_percent = 0.0
-    gratuity_percent = 0.0
-    deposit_amount = 0.0
-    notes = ""
-
-    st.markdown("#### Products")
-    available_products = selected_company.get("products", [])
-    product_lookup = {product["product_id"]: product for product in available_products}
-    product_options = [product["product_id"] for product in available_products]
-    selected_product_defaults = [
-        product_id for product_id in st.session_state.get("estimate_selected_products", []) if product_id in product_lookup
-    ]
-    selected_product_ids = st.multiselect(
-        "Select products for this estimate",
-        options=product_options,
-        default=selected_product_defaults,
-        key="estimate_selected_products",
-        format_func=lambda product_id: product_label(product_lookup[product_id]),
-    )
-    editor_rows = build_estimate_editor_rows(
-        selected_company,
-        selected_product_ids,
-        st.session_state.get("estimate_line_items_seed", []),
-    )
-    product_editor_key = (
-        f"estimate_line_items_{st.session_state['estimate_form_context']}"
-        f"__{'-'.join(selected_product_ids) if selected_product_ids else 'none'}"
-    )
-    items_df = pd.DataFrame(editor_rows)
-    if items_df.empty:
-        items_df = pd.DataFrame(columns=["product_id", "Category", "Description", "Notes", "Qty", "Unit Price"])
-    edited_df = st.data_editor(
-        items_df,
-        num_rows="fixed",
-        use_container_width=True,
-        hide_index=True,
-        key=product_editor_key,
-        column_order=["Category", "Description", "Notes", "Qty", "Unit Price"],
-        disabled=["Category", "Description", "Notes", "Unit Price"],
-        column_config={
-            "Category": st.column_config.TextColumn("Category"),
-            "Description": st.column_config.TextColumn("Description"),
-            "Notes": st.column_config.TextColumn("Notes"),
-            "Qty": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0, format="%.2f"),
-            "Unit Price": st.column_config.NumberColumn("Unit Price", format="$%.2f"),
-        },
+    estimate2_product_lookup = {product["product_id"]: product for product in estimate2_products}
+    estimate2_product_options = [product["product_id"] for product in estimate2_products]
+    estimate2_selected_products = st.multiselect(
+        "Products",
+        options=estimate2_product_options,
+        key=f"estimate2_selected_products__{estimate2_company_name}__{estimate2_client_id}",
+        format_func=lambda product_id: product_label(estimate2_product_lookup[product_id]),
     )
 
-    line_items = line_items_to_rows(edited_df, selected_company)
-    st.session_state["estimate_line_items_seed"] = line_items
-    totals = calculate_totals(line_items, tax_percent, service_charge_percent, gratuity_percent, deposit_amount)
+    event_date_raw = str(estimate2_client.get("event_date", "")).strip()
+    estimate2_event_date = date.fromisoformat(event_date_raw) if event_date_raw else date.today()
+    estimate2_event_type = str(estimate2_client.get("event_type", "Private Event")).strip() or "Private Event"
+    estimate2_venue = str(estimate2_client.get("venue", "")).strip()
+    estimate2_guest_count = int(estimate2_client.get("guest_count", 50) or 50)
 
-    form_data = {
-        "client_id": st.session_state.get("estimate_client_id", ""),
-        "issue_date": issue_date.isoformat(),
-        "client_name": client_name,
-        "client_email": client_email,
-        "client_phone": client_phone,
-        "event_date": event_date.isoformat(),
-        "event_type": event_type,
-        "venue": venue,
-        "guest_count": int(guest_count),
-        "tax_percent": tax_percent,
-        "service_charge_percent": service_charge_percent,
-        "gratuity_percent": gratuity_percent,
-        "notes": notes,
+    estimate2_line_items: list[dict[str, Any]] = []
+    if estimate2_selected_products:
+        st.markdown("#### Products Table")
+        estimate2_rows: list[dict[str, Any]] = []
+        for product_id in estimate2_selected_products:
+            product = estimate2_product_lookup[product_id]
+            qty_key = f"estimate2_qty__{estimate2_company_name}__{estimate2_client_id}__{product_id}"
+            if qty_key not in st.session_state:
+                st.session_state[qty_key] = 1.0
+            qty_decimal = to_decimal(st.session_state[qty_key])
+            unit_price_decimal = to_decimal(product.get("Unit Price", 0))
+            estimate2_rows.append(
+                {
+                    "product_id": product_id,
+                    "Category": product.get("Category", ""),
+                    "Description": product.get("Description", ""),
+                    "Notes": product.get("Notes", ""),
+                    "Qty": float(qty_decimal),
+                    "Unit Price": float(unit_price_decimal),
+                    "Line Total": float((qty_decimal * unit_price_decimal).quantize(TWOPLACES, rounding=ROUND_HALF_UP)),
+                }
+            )
+
+        estimate2_df = pd.DataFrame(estimate2_rows)
+        edited_estimate2_df = st.data_editor(
+            estimate2_df[["Category", "Description", "Notes", "Qty", "Unit Price", "Line Total"]],
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed",
+            key=f"estimate2_products_table__{estimate2_company_name}__{estimate2_client_id}",
+            disabled=["Category", "Description", "Notes", "Unit Price", "Line Total"],
+            column_config={
+                "Qty": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0, format="%.2f"),
+                "Unit Price": st.column_config.NumberColumn("Unit Price", format="$%.2f"),
+                "Line Total": st.column_config.NumberColumn("Line Total", format="$%.2f"),
+            },
+        )
+        for index, product_id in enumerate(estimate2_selected_products):
+            qty_key = f"estimate2_qty__{estimate2_company_name}__{estimate2_client_id}__{product_id}"
+            qty_value = to_decimal(edited_estimate2_df.iloc[index]["Qty"])
+            st.session_state[qty_key] = float(qty_value)
+            product = estimate2_product_lookup[product_id]
+            unit_price_decimal = to_decimal(product.get("Unit Price", 0))
+            estimate2_line_items.append(
+                {
+                    "product_id": product_id,
+                    "Category": product.get("Category", ""),
+                    "Description": product.get("Description", ""),
+                    "Notes": product.get("Notes", ""),
+                    "Qty": float(qty_value),
+                    "Unit Price": float(unit_price_decimal),
+                    "Line Total": float((qty_value * unit_price_decimal).quantize(TWOPLACES, rounding=ROUND_HALF_UP)),
+                }
+            )
+    else:
+        st.info("Select one or more products to build this estimate.")
+
+    estimate2_totals = calculate_totals(estimate2_line_items, 0.0, 0.0, 0.0, 0.0)
+
+    if "estimate2_number" not in st.session_state:
+        st.session_state["estimate2_number"] = next_estimate_number()
+
+    estimate2_form_data = {
+        "client_id": estimate2_client_id,
+        "issue_date": date.today().isoformat(),
+        "client_name": estimate2_client.get("client_name", ""),
+        "client_email": estimate2_client.get("client_email", ""),
+        "client_phone": estimate2_client.get("client_phone", ""),
+        "event_date": estimate2_event_date.isoformat(),
+        "event_type": estimate2_event_type,
+        "venue": estimate2_venue,
+        "guest_count": estimate2_guest_count,
+        "tax_percent": 0.0,
+        "service_charge_percent": 0.0,
+        "gratuity_percent": 0.0,
+        "notes": "",
     }
-
-    payload_for_pdf = build_estimate_payload(
-        selected_company,
-        form_data,
-        line_items,
-        totals,
-        existing_number=loaded_estimate.get("estimate_number") or None,
+    estimate2_payload = build_estimate_payload(
+        estimate2_company,
+        estimate2_form_data,
+        estimate2_line_items,
+        estimate2_totals,
+        existing_number=st.session_state["estimate2_number"],
     )
-    pdf_bytes = estimate_to_pdf_bytes(payload_for_pdf)
+    estimate2_pdf_bytes = estimate_to_pdf_bytes(estimate2_payload)
 
-    b1, b2, b3 = st.columns([1, 1, 1.4])
-    with b1:
-        if st.button("Save estimate", use_container_width=True):
-            saved_path = save_estimate(payload_for_pdf)
-            st.session_state["loaded_estimate"] = load_json(saved_path, {})
-            st.success(f"Saved to {saved_path.name}")
-    with b2:
-        if st.button("Start new estimate", use_container_width=True):
-            reset_estimate_state()
+    e2b1, e2b2 = st.columns([1, 1.4])
+    with e2b1:
+        if st.button("Start New Estimate2", use_container_width=True):
+            st.session_state["estimate2_number"] = next_estimate_number()
             st.rerun()
-    with b3:
+    with e2b2:
         st.download_button(
-            "Download estimate PDF",
-            data=pdf_bytes,
-            file_name=f"{payload_for_pdf['estimate_number']}_{sanitize_filename(client_name or 'client')}.pdf",
+            "Download Estimate PDF",
+            data=estimate2_pdf_bytes,
+            file_name=f"{estimate2_payload['estimate_number']}_{sanitize_filename(estimate2_client.get('client_name', 'client'))}.pdf",
             mime="application/pdf",
             use_container_width=True,
+            disabled=not bool(estimate2_line_items),
         )
