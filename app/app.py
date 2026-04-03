@@ -94,8 +94,37 @@ def normalize_client_name(value: str) -> str:
     return value.strip().casefold()
 
 
+def parse_flexible_date(value: Any) -> date | None:
+    if isinstance(value, date):
+        return value
+
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+
+    for fmt in ("%Y-%m-%d", "%m-%d-%Y", "%m/%d/%Y", "%m.%d.%Y", "%Y/%m/%d", "%Y.%m.%d"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def normalize_date_string(value: Any) -> str:
+    parsed = parse_flexible_date(value)
+    return parsed.strftime("%m-%d-%Y") if parsed else str(value or "").strip()
+
+
 def uses_guest_count_default(category: str) -> bool:
     return category.strip().casefold() in GUEST_COUNT_DEFAULT_CATEGORIES
+
+
+def is_service_category(category: str) -> bool:
+    return category.strip().casefold() == "service"
+
+
+def is_staff_category(category: str) -> bool:
+    return category.strip().casefold() == "staff"
 
 
 def next_product_id(products: list[dict[str, Any]]) -> str:
@@ -160,7 +189,7 @@ def build_client_record(source: dict[str, Any] | None = None, client_id: str | N
                 "client_email": str(source.get("client_email", "")).strip(),
                 "client_phone": str(source.get("client_phone", "")).strip(),
                 "event_type": str(source.get("event_type", client["event_type"])).strip() or "Private Event",
-                "event_date": str(source.get("event_date", "")).strip(),
+                "event_date": normalize_date_string(source.get("event_date", "")),
                 "venue": str(source.get("venue", "")).strip(),
                 "guest_count": int(source.get("guest_count", client["guest_count"]) or client["guest_count"]),
             }
@@ -472,14 +501,28 @@ def calculate_totals(
     deposit_amount: float,
 ) -> dict[str, Decimal]:
     subtotal = Decimal("0.00")
+    service_items_total = Decimal("0.00")
+    staff_items_total = Decimal("0.00")
     for item in line_items:
         qty = to_decimal(item.get("Qty", 0))
         unit_price = to_decimal(item.get("Unit Price", 0))
-        subtotal += (qty * unit_price).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+        line_total = (qty * unit_price).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+        if is_service_category(str(item.get("Category", ""))):
+            service_items_total += line_total
+        elif is_staff_category(str(item.get("Category", ""))):
+            staff_items_total += line_total
+        else:
+            subtotal += line_total
 
-    service_charge = (subtotal * to_decimal(service_pct) / Decimal("100")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
-    gratuity = (subtotal * to_decimal(gratuity_pct) / Decimal("100")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
-    taxable_base = subtotal + service_charge
+    if service_items_total > Decimal("0.00"):
+        service_charge = service_items_total
+    else:
+        service_charge = (subtotal * to_decimal(service_pct) / Decimal("100")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    if staff_items_total > Decimal("0.00"):
+        gratuity = staff_items_total
+    else:
+        gratuity = (subtotal * to_decimal(gratuity_pct) / Decimal("100")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    taxable_base = subtotal + service_charge + gratuity
     tax = (taxable_base * to_decimal(tax_pct) / Decimal("100")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
     total = subtotal + service_charge + gratuity + tax
     deposit = min(to_decimal(deposit_amount), total)
@@ -654,37 +697,29 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     normal.fontName = "Helvetica"
     normal.fontSize = 10
     small = ParagraphStyle("small", parent=normal, fontSize=9, leading=12)
+    header_left = ParagraphStyle("header_left", parent=normal, fontName="Helvetica-Bold", fontSize=10, alignment=0)
+    header_center = ParagraphStyle("header_center", parent=normal, fontName="Helvetica-Bold", fontSize=10, alignment=1)
+    header_right = ParagraphStyle("header_right", parent=normal, fontName="Helvetica-Bold", fontSize=10, alignment=2)
 
     story = []
     if HEADER_LOGO_FILE.exists():
         story.append(Image(str(HEADER_LOGO_FILE), width=7.0 * inch, height=(7.0 * inch * 312) / 1592))
-        story.append(Spacer(1, 0.15 * inch))
+        story.append(Spacer(1, 0.5 * inch))
     business = payload.get("business", {})
-    business_block = "<br/>".join(
-        filter(
-            None,
-            [
-                f"<b>{business.get('business_name', '')}</b>",
-                business.get("business_address", ""),
-                business.get("business_phone", ""),
-                business.get("business_email", ""),
-            ],
-        )
-    )
-    header_table = Table(
+    header_row = Table(
         [
             [
-                Paragraph(business_block, normal),
-                Paragraph(f"Estimate {payload.get('estimate_number', '')}", title_style),
+                Paragraph(f"Client: {payload.get('client_name', '')}", header_left),
+                Paragraph(f"Issue Date: {payload.get('issue_date', '')}", header_center),
+                Paragraph(f"Estimate {payload.get('estimate_number', '')}", header_right),
             ]
         ],
-        colWidths=[4.6 * inch, 2.2 * inch],
+        colWidths=[2.6 * inch, 1.8 * inch, 2.4 * inch],
     )
-    header_table.setStyle(
+    header_row.setStyle(
         TableStyle(
             [
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ("TOPPADDING", (0, 0), (-1, -1), 0),
@@ -692,15 +727,14 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
             ]
         )
     )
-    story.append(header_table)
-    story.append(Spacer(1, 0.1 * inch))
+    story.append(header_row)
+    story.append(Spacer(1, 0.15 * inch))
 
     details_table = Table(
         [
-            ["Client", payload.get("client_name", ""), "Event Date", payload.get("event_date", "")],
             ["Contact", payload.get("client_email", ""), "Venue", payload.get("venue", "")],
             ["Phone", payload.get("client_phone", ""), "Guests", str(payload.get("guest_count", ""))],
-            ["Event Type", payload.get("event_type", ""), "Issue Date", payload.get("issue_date", "")],
+            ["Event Type", payload.get("event_type", ""), "Event Date", payload.get("event_date", "")],
         ],
         colWidths=[1.1 * inch, 2.2 * inch, 1.1 * inch, 2.4 * inch],
     )
@@ -718,7 +752,7 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
         )
     )
     story.append(details_table)
-    story.append(Spacer(1, 0.2 * inch))
+    story.append(Spacer(1, 0.7 * inch))
 
     item_rows = [["Category", "Description", "Notes", "Qty", "Unit Price", "Line Total"]]
     for item in payload.get("line_items", []):
@@ -736,7 +770,7 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
 
     items_table = Table(
         item_rows,
-        colWidths=[1.15 * inch, 2.15 * inch, 1.55 * inch, 0.45 * inch, 0.85 * inch, 0.85 * inch],
+        colWidths=[1.15 * inch, 2.35 * inch, 1.35 * inch, 0.45 * inch, 0.85 * inch, 0.85 * inch],
     )
     items_table.setStyle(
         TableStyle(
@@ -747,7 +781,7 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ALIGN", (3, 1), (-1, -1), "RIGHT"),
+                ("ALIGN", (3, 1), (-1, -1), "CENTER"),
                 ("PADDING", (0, 0), (-1, -1), 5),
             ]
         )
@@ -756,9 +790,10 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     story.append(Spacer(1, 0.2 * inch))
 
     totals_rows = [
+        ["Type", "Amount"],
         ["Subtotal", money(payload.get("subtotal", 0))],
-        ["Service Charge", money(payload.get("service_charge", 0))],
-        ["Gratuity", money(payload.get("gratuity", 0))],
+        ["Service", money(payload.get("service_charge", 0))],
+        ["Staff", money(payload.get("gratuity", 0))],
         ["Tax", money(payload.get("tax", 0))],
         ["Total", money(payload.get("total", 0))],
         ["Deposit", money(payload.get("deposit", 0))],
@@ -768,11 +803,15 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     totals_table.setStyle(
         TableStyle(
             [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-                ("FONTNAME", (0, 4), (-1, 4), "Helvetica-Bold"),
-                ("FONTNAME", (0, 6), (-1, 6), "Helvetica-Bold"),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTNAME", (0, 5), (-1, 5), "Helvetica-Bold"),
+                ("FONTNAME", (0, 7), (-1, 7), "Helvetica-Bold"),
+                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                ("ALIGN", (1, 1), (1, -1), "RIGHT"),
                 ("PADDING", (0, 0), (-1, -1), 5),
             ]
         )
@@ -789,6 +828,31 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     if payment_terms:
         story.append(Paragraph("<b>Payment Terms</b>", normal))
         story.append(Paragraph(payment_terms.replace("\n", "<br/>"), small))
+        story.append(Spacer(1, 0.15 * inch))
+
+    company_table = Table(
+        [
+            ["Company", business.get("business_name", ""), "Estimate #", payload.get("estimate_number", "")],
+            ["Email", business.get("business_email", ""), "Issue Date", payload.get("issue_date", "")],
+            ["Phone", business.get("business_phone", ""), "Address", business.get("business_address", "")],
+        ],
+        colWidths=[1.0 * inch, 2.4 * inch, 1.0 * inch, 2.4 * inch],
+    )
+    company_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("PADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    story.append(company_table)
 
     doc.build(story)
     return buffer.getvalue()
@@ -1117,7 +1181,7 @@ with estimate_tab:
     )
 
     event_date_raw = str(estimate_builder_client.get("event_date", "")).strip()
-    estimate_builder_event_date = date.fromisoformat(event_date_raw) if event_date_raw else date.today()
+    estimate_builder_event_date = parse_flexible_date(event_date_raw) or date.today()
     estimate_builder_event_type = str(estimate_builder_client.get("event_type", "Private Event")).strip() or "Private Event"
     estimate_builder_venue = str(estimate_builder_client.get("venue", "")).strip()
     estimate_builder_guest_count = int(estimate_builder_client.get("guest_count", 50) or 50)
@@ -1194,7 +1258,7 @@ with estimate_tab:
         "client_name": estimate_builder_client.get("client_name", ""),
         "client_email": estimate_builder_client.get("client_email", ""),
         "client_phone": estimate_builder_client.get("client_phone", ""),
-        "event_date": estimate_builder_event_date.isoformat(),
+        "event_date": estimate_builder_event_date.strftime("%m-%d-%Y"),
         "event_type": estimate_builder_event_type,
         "venue": estimate_builder_venue,
         "guest_count": estimate_builder_guest_count,
