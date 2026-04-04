@@ -138,6 +138,10 @@ def is_delivery_category(category: str) -> bool:
     return category.strip().casefold() == "delivery"
 
 
+def is_utensils_category(category: str) -> bool:
+    return category.strip().casefold() == "utensils"
+
+
 def is_servers_product(product: dict[str, Any]) -> bool:
     return str(product.get("Description", "")).strip().casefold() == "servers"
 
@@ -151,6 +155,8 @@ def default_estimate_qty(product: dict[str, Any], client: dict[str, Any], guest_
         return float(to_int(client.get("servers_count", 0), 0) * to_int(client.get("servers_hours", 0), 0))
     if is_kitchen_staff_product(product):
         return float(to_int(client.get("kitchen_staff_count", 0), 0) * to_int(client.get("kitchen_staff_hours", 0), 0))
+    if is_utensils_category(str(product.get("Category", ""))):
+        return float(guest_count + to_int(client.get("utensils_buffer", 0), 0))
     if uses_guest_count_default(str(product.get("Category", ""))):
         return float(guest_count)
     return 1.0
@@ -214,6 +220,7 @@ def build_client_record(source: dict[str, Any] | None = None, client_id: str | N
         "kitchen_staff_count": 0,
         "kitchen_staff_hours": 0,
         "deposit_amount": 0.0,
+        "utensils_buffer": 0,
     }
     if source:
         client.update(
@@ -231,6 +238,7 @@ def build_client_record(source: dict[str, Any] | None = None, client_id: str | N
                 "kitchen_staff_count": to_int(source.get("kitchen_staff_count", source.get("Kitchen Staff (#)", 0)), 0),
                 "kitchen_staff_hours": to_int(source.get("kitchen_staff_hours", source.get("Kitchen Staff (hrs)", 0)), 0),
                 "deposit_amount": float(to_decimal(source.get("deposit_amount", source.get("Deposit ($)", 0.0)))),
+                "utensils_buffer": to_int(source.get("utensils_buffer", source.get("Utensils Buffer", 0)), 0),
             }
         )
     return client
@@ -1064,8 +1072,6 @@ with company_tab:
     if st.session_state.get("company_delete_confirm_target", "") != current_delete_target:
         st.session_state["company_delete_confirm_target"] = ""
 
-    st.info("Companies are unique by business name. Create a new company or edit an existing one here.")
-
     c1, c2 = st.columns(2)
     with c1:
         business_name = st.text_input("Business name", key="company_business_name")
@@ -1184,7 +1190,7 @@ with products_tab:
             "Category": st.column_config.TextColumn("Category"),
             "Description": st.column_config.TextColumn("Description", required=True),
             "Notes": st.column_config.TextColumn("Notes"),
-            "Unit Price": st.column_config.NumberColumn("Unit Price", min_value=0.0, step=1.0, format="$%.2f"),
+            "Unit Price": st.column_config.NumberColumn("Unit Price", min_value=0.0, step=0.01, format="$%.2f"),
         },
     )
 
@@ -1228,6 +1234,7 @@ with clients_tab:
                 "kitchen_staff_count",
                 "kitchen_staff_hours",
                 "deposit_amount",
+                "utensils_buffer",
             ]
         )
 
@@ -1250,6 +1257,7 @@ with clients_tab:
             "kitchen_staff_count",
             "kitchen_staff_hours",
             "deposit_amount",
+            "utensils_buffer",
         ],
         column_config={
             "client_name": st.column_config.TextColumn("Client name", required=True),
@@ -1264,6 +1272,7 @@ with clients_tab:
             "kitchen_staff_count": st.column_config.NumberColumn("Kitchen Staff (#)", min_value=0, step=1, format="%d"),
             "kitchen_staff_hours": st.column_config.NumberColumn("Kitchen Staff (hrs)", min_value=0, step=1, format="%d"),
             "deposit_amount": st.column_config.NumberColumn("Deposit ($)", min_value=0.0, step=25.0, format="$%.2f"),
+            "utensils_buffer": st.column_config.NumberColumn("Utensils Buffer", min_value=0, step=1, format="%d"),
         },
     )
 
