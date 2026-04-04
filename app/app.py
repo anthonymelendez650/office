@@ -668,6 +668,52 @@ def load_estimate_file(filename: str) -> dict[str, Any]:
     return load_json(ESTIMATES_DIR / filename, {})
 
 
+def delete_estimate_file(filename: str) -> None:
+    path = ESTIMATES_DIR / filename
+    if path.exists():
+        path.unlink()
+
+
+def next_estimate_selection_after_delete(filename: str, records: list[dict[str, Any]]) -> str:
+    options = [record["file"] for record in records]
+    if filename not in options:
+        return NEW_ESTIMATE_OPTION
+    current_index = options.index(filename)
+    remaining = options[:current_index] + options[current_index + 1 :]
+    if current_index < len(remaining):
+        return remaining[current_index]
+    if remaining:
+        return remaining[-1]
+    return NEW_ESTIMATE_OPTION
+
+
+@st.dialog("Delete Estimate")
+def confirm_delete_estimate_dialog(filename: str, records: list[dict[str, Any]]) -> None:
+    loaded = load_estimate_file(filename)
+    estimate_number = loaded.get("estimate_number", filename)
+    client_name = str(loaded.get("client_name", "")).strip()
+    company_name = str(loaded.get("company_name", "")).strip()
+    details = " | ".join(part for part in [str(estimate_number), company_name, client_name] if part)
+    st.warning(f"Delete this estimate?\n\n{details}")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Cancel", use_container_width=True):
+            st.rerun()
+    with c2:
+        if st.button("Confirm Delete", use_container_width=True, type="primary"):
+            next_selection = next_estimate_selection_after_delete(filename, records)
+            delete_estimate_file(filename)
+            if next_selection == NEW_ESTIMATE_OPTION:
+                reset_estimate_builder_state(next_estimate_number())
+            else:
+                next_loaded = load_estimate_file(next_selection)
+                if next_loaded:
+                    queue_estimate_load(next_selection, next_loaded)
+                else:
+                    reset_estimate_builder_state(next_estimate_number())
+            st.rerun()
+
+
 def estimate_product_selection_key(company_name: str, client_id: str) -> str:
     return f"estimate_builder_selected_products__{company_name}__{client_id}"
 
@@ -1094,6 +1140,20 @@ def render_saved_estimate_loader() -> None:
             st.rerun()
 
 
+@st.dialog("Delete Company")
+def confirm_delete_company_dialog(company_name: str, store: dict[str, Any]) -> None:
+    st.warning(f"Delete company?\n\n{company_name}")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Cancel", use_container_width=True):
+            st.rerun()
+    with c2:
+        if st.button("Confirm Delete", use_container_width=True, type="primary"):
+            delete_company(store, company_name)
+            st.session_state["company_editor_context"] = "new"
+            st.rerun()
+
+
 def sync_company_editor(company: dict[str, Any] | None, creating_new: bool) -> None:
     context = "new" if creating_new else f"existing:{company['business_name']}"
     if st.session_state.get("company_editor_context") == context:
@@ -1201,9 +1261,6 @@ with company_tab:
     creating_new_company = company_choice == NEW_COMPANY_OPTION
     selected_company = None if creating_new_company else find_company(companies, company_choice)
     sync_company_editor(selected_company, creating_new_company)
-    current_delete_target = "" if creating_new_company or not selected_company else selected_company["business_name"]
-    if st.session_state.get("company_delete_confirm_target", "") != current_delete_target:
-        st.session_state["company_delete_confirm_target"] = ""
 
     c1, c2 = st.columns(2)
     with c1:
@@ -1229,20 +1286,14 @@ with company_tab:
     payment_terms = st.text_area("Default payment terms", key="company_payment_terms", height=110)
     estimate_notes = st.text_area("Default note", key="company_estimate_notes", height=110)
 
-    action_columns = st.columns([1, 4, 1, 1])
+    action_columns = st.columns([1, 4, 1])
     save_label = "Create company" if creating_new_company else "Save company"
     with action_columns[0]:
         save_clicked = st.button(save_label, use_container_width=True)
     with action_columns[2]:
-        request_delete_clicked = (
+        delete_clicked = (
             st.button("Delete company", use_container_width=True, type="secondary")
             if not creating_new_company
-            else False
-        )
-    with action_columns[3]:
-        confirm_delete_clicked = (
-            st.button("Confirm delete", use_container_width=True, type="primary")
-            if st.session_state.get("company_delete_confirm_target", "") == current_delete_target and current_delete_target
             else False
         )
 
@@ -1273,25 +1324,8 @@ with company_tab:
             st.success(f"Saved company: {saved_name}")
             st.rerun()
 
-    if request_delete_clicked and selected_company:
-        st.session_state["company_delete_confirm_target"] = selected_company["business_name"]
-        st.rerun()
-
-    if st.session_state.get("company_delete_confirm_target", "") == current_delete_target and current_delete_target:
-        notice_columns = st.columns([5, 1])
-        with notice_columns[0]:
-            st.warning(f"Confirm deletion of {current_delete_target}. This cannot be undone.")
-        with notice_columns[1]:
-            if st.button("Cancel", use_container_width=True):
-                st.session_state["company_delete_confirm_target"] = ""
-                st.rerun()
-
-    if confirm_delete_clicked and selected_company:
-        delete_company(company_store, selected_company["business_name"])
-        st.session_state["company_delete_confirm_target"] = ""
-        st.session_state["company_editor_context"] = "new"
-        st.success(f"Deleted company: {selected_company['business_name']}")
-        st.rerun()
+    if delete_clicked and selected_company:
+        confirm_delete_company_dialog(selected_company["business_name"], company_store)
 
 with products_tab:
     st.subheader("Products")
@@ -1419,7 +1453,6 @@ with clients_tab:
 
 with estimate_tab:
     st.subheader("Estimate")
-    st.caption("Clean estimate generator using the selected company, client, and products.")
     if not company_names:
         st.warning("Create a company first before building estimates.")
         st.stop()
@@ -1658,12 +1691,8 @@ with estimate_tab:
     estimate_builder_payload["selected_product_ids"] = estimate_builder_selected_products
     estimate_builder_pdf_bytes = estimate_to_pdf_bytes(estimate_builder_payload)
 
-    e2b1, e2b2, e2b3 = st.columns([1, 1, 1.4])
+    e2b1, e2b2, e2b3 = st.columns([1, 1.4, 1])
     with e2b1:
-        if st.button("Start New Estimate", use_container_width=True):
-            reset_estimate_builder_state(next_estimate_number())
-            st.rerun()
-    with e2b2:
         if st.button("Save Estimate", use_container_width=True, disabled=not bool(estimate_builder_line_items)):
             saved_path = save_estimate(
                 estimate_builder_payload,
@@ -1671,7 +1700,7 @@ with estimate_tab:
             )
             queue_estimate_load(saved_path.name, estimate_builder_payload)
             st.rerun()
-    with e2b3:
+    with e2b2:
         st.download_button(
             "Download Estimate PDF",
             data=estimate_builder_pdf_bytes,
@@ -1680,3 +1709,16 @@ with estimate_tab:
             use_container_width=True,
             disabled=not bool(estimate_builder_line_items),
         )
+    with e2b3:
+        current_delete_target = (
+            selected_estimate_option
+            if selected_estimate_option != NEW_ESTIMATE_OPTION and selected_estimate_option in [record["file"] for record in saved_estimate_records]
+            else ""
+        )
+        if st.button(
+            "Delete Estimate",
+            use_container_width=True,
+            type="primary",
+            disabled=not bool(current_delete_target),
+        ) and current_delete_target:
+            confirm_delete_estimate_dialog(current_delete_target, saved_estimate_records)
