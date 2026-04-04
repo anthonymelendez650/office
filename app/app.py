@@ -1398,9 +1398,6 @@ with estimate_tab:
                     "Line Total": float((qty_value * unit_price_decimal).quantize(TWOPLACES, rounding=ROUND_HALF_UP)),
                 }
             )
-    else:
-        st.info("Select one or more products to build this estimate.")
-
     estimate_builder_totals = calculate_totals(
         estimate_builder_line_items,
         0.0,
