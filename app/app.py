@@ -27,6 +27,7 @@ HEADER_LOGO_FILE = PROJECT_ROOT / "images" / "logo_header.png"
 
 TWOPLACES = Decimal("0.01")
 NEW_COMPANY_OPTION = "Create new company"
+NEW_ESTIMATE_OPTION = "Create a new estimate"
 GUEST_COUNT_DEFAULT_CATEGORIES = {
     "hot entree",
     "cold entree",
@@ -555,6 +556,22 @@ def list_saved_estimates() -> list[dict[str, Any]]:
     return items
 
 
+def estimate_selection_label(option: str, records: list[dict[str, Any]]) -> str:
+    if option == NEW_ESTIMATE_OPTION:
+        return NEW_ESTIMATE_OPTION
+    for record in records:
+        if record["file"] == option:
+            event_date = record.get("event_date", "")
+            updated_at = str(record.get("updated_at", "")).replace("T", " ").strip()
+            details = [record.get("estimate_number", option), record.get("company_name", ""), record.get("client_name", "")]
+            if event_date:
+                details.append(event_date)
+            if updated_at:
+                details.append(updated_at)
+            return " | ".join(part for part in details if part)
+    return option
+
+
 def calculate_totals(
     line_items: list[dict[str, Any]],
     tax_pct: float,
@@ -627,20 +644,136 @@ def build_estimate_payload(
     return payload
 
 
-def save_estimate(payload: dict[str, Any]) -> Path:
-    client_slug = sanitize_filename(payload.get("client_name", "client"))
-    company_slug = sanitize_filename(payload.get("company_name", "company"))
-    path = ESTIMATES_DIR / f"{payload['estimate_number']}_{company_slug}_{client_slug}.json"
+def estimate_storage_path(estimate_number: str) -> Path:
+    safe_number = sanitize_filename(estimate_number)
+    return ESTIMATES_DIR / f"{safe_number}.json"
+
+
+def save_estimate(payload: dict[str, Any], existing_file: str | None = None) -> Path:
+    path = estimate_storage_path(str(payload.get("estimate_number", "estimate")))
     existing = load_json(path, {})
+    previous_path = ESTIMATES_DIR / existing_file if existing_file else None
+    if not existing and previous_path and previous_path.exists():
+        existing = load_json(previous_path, {})
     if existing:
         payload["created_at"] = existing.get("created_at", payload["created_at"])
     payload["updated_at"] = datetime.now().isoformat(timespec="seconds")
     save_json(path, payload)
+    if previous_path and previous_path != path and previous_path.exists():
+        previous_path.unlink()
     return path
 
 
 def load_estimate_file(filename: str) -> dict[str, Any]:
     return load_json(ESTIMATES_DIR / filename, {})
+
+
+def estimate_product_selection_key(company_name: str, client_id: str) -> str:
+    return f"estimate_builder_selected_products__{company_name}__{client_id}"
+
+
+def estimate_product_qty_key(company_name: str, client_id: str, product_id: str) -> str:
+    return f"estimate_builder_qty__{company_name}__{client_id}__{product_id}"
+
+
+def estimate_product_notes_key(company_name: str, client_id: str, product_id: str) -> str:
+    return f"estimate_builder_notes__{company_name}__{client_id}__{product_id}"
+
+
+def clear_estimate_builder_editor_state() -> None:
+    for key in list(st.session_state.keys()):
+        if key.startswith("estimate_builder_selected_products__"):
+            st.session_state.pop(key, None)
+        elif key.startswith("estimate_builder_qty__"):
+            st.session_state.pop(key, None)
+        elif key.startswith("estimate_builder_notes__"):
+            st.session_state.pop(key, None)
+        elif key.startswith("estimate_builder_products_table__"):
+            st.session_state.pop(key, None)
+
+
+def reset_estimate_builder_state(new_number: str | None = None) -> None:
+    st.session_state.pop("estimate_builder_loaded_payload", None)
+    st.session_state.pop("estimate_builder_loaded_file", None)
+    st.session_state.pop("estimate_builder_active_selection", None)
+    clear_estimate_builder_editor_state()
+    st.session_state["estimate_builder_active_selection"] = NEW_ESTIMATE_OPTION
+    if new_number is not None:
+        st.session_state["estimate_builder_number"] = new_number
+
+
+def queue_estimate_load(filename: str, loaded: dict[str, Any]) -> None:
+    st.session_state["estimate_builder_pending_load"] = {
+        "file": filename,
+        "payload": loaded,
+    }
+
+
+def ensure_estimate_snapshot_company(loaded: dict[str, Any]) -> dict[str, Any]:
+    snapshot = build_company_record(
+        name=str(loaded.get("company_name", "")).strip() or None,
+        source=loaded.get("business", {}) if isinstance(loaded.get("business", {}), dict) else None,
+    )
+    saved_client = build_client_record(
+        source={
+            "client_id": loaded.get("client_id", ""),
+            "client_name": loaded.get("client_name", ""),
+            "client_email": loaded.get("client_email", ""),
+            "client_phone": loaded.get("client_phone", ""),
+            "event_type": loaded.get("event_type", ""),
+            "event_date": loaded.get("event_date", ""),
+            "venue": loaded.get("venue", ""),
+            "guest_count": loaded.get("guest_count", 0),
+            "deposit_amount": loaded.get("deposit", 0.0),
+        }
+    )
+    if saved_client["client_name"] and not find_client(snapshot, saved_client["client_id"]):
+        snapshot["clients"] = snapshot.get("clients", []) + [saved_client]
+
+    for item in loaded.get("line_items", []):
+        product_id = str(item.get("product_id", "")).strip()
+        if not product_id or find_product(snapshot, product_id):
+            continue
+        snapshot["products"] = snapshot.get("products", []) + [build_product_record(source=item, product_id=product_id)]
+    return snapshot
+
+
+def apply_loaded_estimate_to_session(loaded: dict[str, Any], filename: str) -> None:
+    company_name = str(loaded.get("company_name", "")).strip()
+    client_id = str(loaded.get("client_id", "")).strip()
+    selected_product_ids = [
+        str(product_id).strip()
+        for product_id in loaded.get("selected_product_ids", [])
+        if str(product_id).strip()
+    ]
+    if not selected_product_ids:
+        selected_product_ids = [
+            str(item.get("product_id", "")).strip()
+            for item in loaded.get("line_items", [])
+            if str(item.get("product_id", "")).strip()
+        ]
+
+    st.session_state["estimate_builder_loaded_payload"] = loaded
+    st.session_state["estimate_builder_loaded_file"] = filename
+    estimate_number = str(loaded.get("estimate_number", "")).strip()
+    st.session_state["estimate_builder_number"] = estimate_number or next_estimate_number()
+    st.session_state["estimate_builder_company_name"] = company_name
+    if client_id:
+        st.session_state["estimate_builder_client_id"] = client_id
+    clear_estimate_builder_editor_state()
+    if company_name and client_id:
+        st.session_state[estimate_product_selection_key(company_name, client_id)] = selected_product_ids
+        for item in loaded.get("line_items", []):
+            product_id = str(item.get("product_id", "")).strip()
+            if not product_id:
+                continue
+            st.session_state[estimate_product_qty_key(company_name, client_id, product_id)] = float(
+                to_decimal(item.get("Qty", 0))
+            )
+            st.session_state[estimate_product_notes_key(company_name, client_id, product_id)] = str(
+                item.get("Notes", "")
+            ).strip()
+    st.session_state["estimate_builder_active_selection"] = filename
 
 
 def refresh_line_items_for_company(line_items: list[dict[str, Any]], company: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1291,13 +1424,61 @@ with estimate_tab:
         st.warning("Create a company first before building estimates.")
         st.stop()
 
+    pending_estimate_load = st.session_state.pop("estimate_builder_pending_load", None)
+    if isinstance(pending_estimate_load, dict):
+        pending_file = str(pending_estimate_load.get("file", "")).strip()
+        pending_payload = pending_estimate_load.get("payload", {})
+        if pending_file and isinstance(pending_payload, dict) and pending_payload:
+            st.session_state["estimate_builder_load_selection"] = pending_file
+            apply_loaded_estimate_to_session(pending_payload, pending_file)
+
+    saved_estimate_records = list_saved_estimates()
+    load_estimate_options = [NEW_ESTIMATE_OPTION] + [record["file"] for record in saved_estimate_records]
+    if st.session_state.get("estimate_builder_load_selection") not in load_estimate_options:
+        st.session_state["estimate_builder_load_selection"] = NEW_ESTIMATE_OPTION
+    if "estimate_builder_active_selection" not in st.session_state:
+        st.session_state["estimate_builder_active_selection"] = st.session_state["estimate_builder_load_selection"]
+
+    selected_estimate_option = st.selectbox(
+        "Load Estimate",
+        options=load_estimate_options,
+        key="estimate_builder_load_selection",
+        format_func=lambda option: estimate_selection_label(option, saved_estimate_records),
+    )
+    if selected_estimate_option != st.session_state.get("estimate_builder_active_selection", NEW_ESTIMATE_OPTION):
+        if selected_estimate_option == NEW_ESTIMATE_OPTION:
+            reset_estimate_builder_state()
+        else:
+            loaded_selection = load_estimate_file(selected_estimate_option)
+            if loaded_selection:
+                queue_estimate_load(selected_estimate_option, loaded_selection)
+            else:
+                reset_estimate_builder_state()
+                st.warning("That saved estimate could not be loaded.")
+        st.rerun()
+
+    loaded_estimate = st.session_state.get("estimate_builder_loaded_payload", {})
+    loaded_snapshot_active = selected_estimate_option != NEW_ESTIMATE_OPTION and bool(loaded_estimate)
+
+    if "estimate_builder_company_name" not in st.session_state:
+        st.session_state["estimate_builder_company_name"] = company_store["selected_company"] or company_names[0]
+    if loaded_snapshot_active:
+        saved_company_name = str(loaded_estimate.get("company_name", "")).strip()
+        if saved_company_name and saved_company_name not in company_names:
+            company_names = company_names + [saved_company_name]
+
     estimate_builder_company_name = st.selectbox(
         "Company",
         options=company_names,
-        index=company_names.index(company_store["selected_company"]) if company_store["selected_company"] in company_names else 0,
         key="estimate_builder_company_name",
     )
-    estimate_builder_company = find_company(companies, estimate_builder_company_name)
+    estimate_builder_company = None
+    if loaded_snapshot_active and normalize_company_name(estimate_builder_company_name) == normalize_company_name(
+        loaded_estimate.get("company_name", "")
+    ):
+        estimate_builder_company = ensure_estimate_snapshot_company(loaded_estimate)
+    if not estimate_builder_company:
+        estimate_builder_company = find_company(companies, estimate_builder_company_name)
     assert estimate_builder_company is not None
 
     estimate_builder_clients = estimate_builder_company.get("clients", [])
@@ -1307,10 +1488,18 @@ with estimate_tab:
 
     estimate_builder_client_lookup = {client["client_id"]: client for client in estimate_builder_clients}
     estimate_builder_client_options = [client["client_id"] for client in estimate_builder_clients]
+    if "estimate_builder_client_id" not in st.session_state or st.session_state["estimate_builder_client_id"] not in estimate_builder_client_options:
+        preferred_client_id = ""
+        if loaded_snapshot_active and normalize_company_name(estimate_builder_company_name) == normalize_company_name(
+            loaded_estimate.get("company_name", "")
+        ):
+            preferred_client_id = str(loaded_estimate.get("client_id", "")).strip()
+        st.session_state["estimate_builder_client_id"] = (
+            preferred_client_id if preferred_client_id in estimate_builder_client_options else estimate_builder_client_options[0]
+        )
     estimate_builder_client_id = st.selectbox(
         "Client",
         options=estimate_builder_client_options,
-        index=0,
         key="estimate_builder_client_id",
         format_func=lambda client_id: client_label(estimate_builder_client_lookup[client_id]),
     )
@@ -1323,19 +1512,54 @@ with estimate_tab:
 
     estimate_builder_product_lookup = {product["product_id"]: product for product in estimate_builder_products}
     estimate_builder_product_options = [product["product_id"] for product in estimate_builder_products]
+    estimate_builder_products_key = estimate_product_selection_key(estimate_builder_company_name, estimate_builder_client_id)
+    if estimate_builder_products_key not in st.session_state:
+        if (
+            loaded_snapshot_active
+            and normalize_company_name(estimate_builder_company_name) == normalize_company_name(loaded_estimate.get("company_name", ""))
+            and estimate_builder_client_id == str(loaded_estimate.get("client_id", "")).strip()
+        ):
+            st.session_state[estimate_builder_products_key] = [
+                str(product_id).strip()
+                for product_id in loaded_estimate.get("selected_product_ids", [])
+                if str(product_id).strip() in estimate_builder_product_options
+            ]
+            if not st.session_state[estimate_builder_products_key]:
+                st.session_state[estimate_builder_products_key] = [
+                    str(item.get("product_id", "")).strip()
+                    for item in loaded_estimate.get("line_items", [])
+                    if str(item.get("product_id", "")).strip() in estimate_builder_product_options
+                ]
+        else:
+            st.session_state[estimate_builder_products_key] = []
     estimate_builder_selected_products = st.multiselect(
         "Products",
         options=estimate_builder_product_options,
-        key=f"estimate_builder_selected_products__{estimate_builder_company_name}__{estimate_builder_client_id}",
+        key=estimate_builder_products_key,
         format_func=lambda product_id: product_label(estimate_builder_product_lookup[product_id]),
     )
 
-    event_date_raw = str(estimate_builder_client.get("event_date", "")).strip()
+    loaded_estimate_matches_current_selection = (
+        loaded_snapshot_active
+        and normalize_company_name(estimate_builder_company_name) == normalize_company_name(loaded_estimate.get("company_name", ""))
+        and estimate_builder_client_id == str(loaded_estimate.get("client_id", "")).strip()
+    )
+    estimate_client_source = loaded_estimate if loaded_estimate_matches_current_selection else estimate_builder_client
+    event_date_raw = str(estimate_client_source.get("event_date", "")).strip()
     estimate_builder_event_date = parse_flexible_date(event_date_raw) or date.today()
-    estimate_builder_event_type = str(estimate_builder_client.get("event_type", "Private Event")).strip() or "Private Event"
-    estimate_builder_venue = str(estimate_builder_client.get("venue", "")).strip()
-    estimate_builder_guest_count = int(estimate_builder_client.get("guest_count", 50) or 50)
-    estimate_builder_deposit_amount = float(to_decimal(estimate_builder_client.get("deposit_amount", 0.0)))
+    estimate_builder_event_type = (
+        str(estimate_client_source.get("event_type", estimate_builder_client.get("event_type", "Private Event"))).strip()
+        or "Private Event"
+    )
+    estimate_builder_venue = str(
+        estimate_client_source.get("venue", estimate_builder_client.get("venue", ""))
+    ).strip()
+    estimate_builder_guest_count = int(
+        estimate_client_source.get("guest_count", estimate_builder_client.get("guest_count", 50)) or 50
+    )
+    estimate_builder_deposit_amount = float(
+        to_decimal(estimate_client_source.get("deposit", estimate_client_source.get("deposit_amount", 0.0)))
+    )
 
     estimate_builder_line_items: list[dict[str, Any]] = []
     if estimate_builder_selected_products:
@@ -1343,10 +1567,10 @@ with estimate_tab:
         estimate_builder_rows: list[dict[str, Any]] = []
         for product_id in estimate_builder_selected_products:
             product = estimate_builder_product_lookup[product_id]
-            qty_key = f"estimate_builder_qty__{estimate_builder_company_name}__{estimate_builder_client_id}__{product_id}"
+            qty_key = estimate_product_qty_key(estimate_builder_company_name, estimate_builder_client_id, product_id)
             if qty_key not in st.session_state:
                 st.session_state[qty_key] = default_estimate_qty(product, estimate_builder_client, estimate_builder_guest_count)
-            notes_key = f"estimate_builder_notes__{estimate_builder_company_name}__{estimate_builder_client_id}__{product_id}"
+            notes_key = estimate_product_notes_key(estimate_builder_company_name, estimate_builder_client_id, product_id)
             if notes_key not in st.session_state:
                 st.session_state[notes_key] = str(product.get("Notes", "")).strip()
             qty_decimal = to_decimal(st.session_state[qty_key])
@@ -1369,7 +1593,7 @@ with estimate_tab:
             use_container_width=True,
             hide_index=True,
             num_rows="fixed",
-            key=f"estimate_builder_products_table__{estimate_builder_company_name}__{estimate_builder_client_id}",
+            key=f"estimate_builder_products_table__{estimate_builder_company_name}__{estimate_builder_client_id}__{st.session_state.get('estimate_builder_number', 'new')}",
             disabled=["Category", "Description", "Unit Price", "Line Total"],
             column_config={
                 "Notes": st.column_config.TextColumn("Notes"),
@@ -1379,8 +1603,8 @@ with estimate_tab:
             },
         )
         for index, product_id in enumerate(estimate_builder_selected_products):
-            qty_key = f"estimate_builder_qty__{estimate_builder_company_name}__{estimate_builder_client_id}__{product_id}"
-            notes_key = f"estimate_builder_notes__{estimate_builder_company_name}__{estimate_builder_client_id}__{product_id}"
+            qty_key = estimate_product_qty_key(estimate_builder_company_name, estimate_builder_client_id, product_id)
+            notes_key = estimate_product_notes_key(estimate_builder_company_name, estimate_builder_client_id, product_id)
             qty_value = to_decimal(edited_estimate_builder_df.iloc[index]["Qty"])
             notes_value = str(edited_estimate_builder_df.iloc[index]["Notes"]).strip()
             st.session_state[qty_key] = float(qty_value)
@@ -1412,9 +1636,9 @@ with estimate_tab:
     estimate_builder_form_data = {
         "client_id": estimate_builder_client_id,
         "issue_date": date.today().isoformat(),
-        "client_name": estimate_builder_client.get("client_name", ""),
-        "client_email": estimate_builder_client.get("client_email", ""),
-        "client_phone": estimate_builder_client.get("client_phone", ""),
+        "client_name": estimate_client_source.get("client_name", estimate_builder_client.get("client_name", "")),
+        "client_email": estimate_client_source.get("client_email", estimate_builder_client.get("client_email", "")),
+        "client_phone": estimate_client_source.get("client_phone", estimate_builder_client.get("client_phone", "")),
         "event_date": estimate_builder_event_date.strftime("%m-%d-%Y"),
         "event_type": estimate_builder_event_type,
         "venue": estimate_builder_venue,
@@ -1431,18 +1655,27 @@ with estimate_tab:
         estimate_builder_totals,
         existing_number=st.session_state["estimate_builder_number"],
     )
+    estimate_builder_payload["selected_product_ids"] = estimate_builder_selected_products
     estimate_builder_pdf_bytes = estimate_to_pdf_bytes(estimate_builder_payload)
 
-    e2b1, e2b2 = st.columns([1, 1.4])
+    e2b1, e2b2, e2b3 = st.columns([1, 1, 1.4])
     with e2b1:
         if st.button("Start New Estimate", use_container_width=True):
-            st.session_state["estimate_builder_number"] = next_estimate_number()
+            reset_estimate_builder_state(next_estimate_number())
             st.rerun()
     with e2b2:
+        if st.button("Save Estimate", use_container_width=True, disabled=not bool(estimate_builder_line_items)):
+            saved_path = save_estimate(
+                estimate_builder_payload,
+                existing_file=st.session_state.get("estimate_builder_loaded_file"),
+            )
+            queue_estimate_load(saved_path.name, estimate_builder_payload)
+            st.rerun()
+    with e2b3:
         st.download_button(
             "Download Estimate PDF",
             data=estimate_builder_pdf_bytes,
-            file_name=f"{estimate_builder_payload['estimate_number']}_{sanitize_filename(estimate_builder_client.get('client_name', 'client'))}.pdf",
+            file_name=f"{estimate_builder_payload['estimate_number']}_{sanitize_filename(estimate_builder_form_data.get('client_name', 'client'))}.pdf",
             mime="application/pdf",
             use_container_width=True,
             disabled=not bool(estimate_builder_line_items),
