@@ -115,6 +115,13 @@ def normalize_date_string(value: Any) -> str:
     return parsed.strftime("%m-%d-%Y") if parsed else str(value or "").strip()
 
 
+def to_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(to_decimal(value))
+    except Exception:
+        return default
+
+
 def uses_guest_count_default(category: str) -> bool:
     return category.strip().casefold() in GUEST_COUNT_DEFAULT_CATEGORIES
 
@@ -125,6 +132,28 @@ def is_service_category(category: str) -> bool:
 
 def is_staff_category(category: str) -> bool:
     return category.strip().casefold() == "staff"
+
+
+def is_delivery_category(category: str) -> bool:
+    return category.strip().casefold() == "delivery"
+
+
+def is_servers_product(product: dict[str, Any]) -> bool:
+    return str(product.get("Description", "")).strip().casefold() == "servers"
+
+
+def is_kitchen_staff_product(product: dict[str, Any]) -> bool:
+    return str(product.get("Description", "")).strip().casefold() == "kitchen staff"
+
+
+def default_estimate_qty(product: dict[str, Any], client: dict[str, Any], guest_count: int) -> float:
+    if is_servers_product(product):
+        return float(to_int(client.get("servers_count", 0), 0) * to_int(client.get("servers_hours", 0), 0))
+    if is_kitchen_staff_product(product):
+        return float(to_int(client.get("kitchen_staff_count", 0), 0) * to_int(client.get("kitchen_staff_hours", 0), 0))
+    if uses_guest_count_default(str(product.get("Category", ""))):
+        return float(guest_count)
+    return 1.0
 
 
 def next_product_id(products: list[dict[str, Any]]) -> str:
@@ -180,6 +209,11 @@ def build_client_record(source: dict[str, Any] | None = None, client_id: str | N
         "event_date": "",
         "venue": "",
         "guest_count": 50,
+        "servers_count": 0,
+        "servers_hours": 0,
+        "kitchen_staff_count": 0,
+        "kitchen_staff_hours": 0,
+        "deposit_amount": 0.0,
     }
     if source:
         client.update(
@@ -191,7 +225,12 @@ def build_client_record(source: dict[str, Any] | None = None, client_id: str | N
                 "event_type": str(source.get("event_type", client["event_type"])).strip() or "Private Event",
                 "event_date": normalize_date_string(source.get("event_date", "")),
                 "venue": str(source.get("venue", "")).strip(),
-                "guest_count": int(source.get("guest_count", client["guest_count"]) or client["guest_count"]),
+                "guest_count": to_int(source.get("guest_count", client["guest_count"]) or client["guest_count"], client["guest_count"]),
+                "servers_count": to_int(source.get("servers_count", source.get("Servers (#)", 0)), 0),
+                "servers_hours": to_int(source.get("servers_hours", source.get("Servers (hrs)", 0)), 0),
+                "kitchen_staff_count": to_int(source.get("kitchen_staff_count", source.get("Kitchen Staff (#)", 0)), 0),
+                "kitchen_staff_hours": to_int(source.get("kitchen_staff_hours", source.get("Kitchen Staff (hrs)", 0)), 0),
+                "deposit_amount": float(to_decimal(source.get("deposit_amount", source.get("Deposit ($)", 0.0)))),
             }
         )
     return client
@@ -503,6 +542,7 @@ def calculate_totals(
     subtotal = Decimal("0.00")
     service_items_total = Decimal("0.00")
     staff_items_total = Decimal("0.00")
+    delivery_items_total = Decimal("0.00")
     for item in line_items:
         qty = to_decimal(item.get("Qty", 0))
         unit_price = to_decimal(item.get("Unit Price", 0))
@@ -511,6 +551,8 @@ def calculate_totals(
             service_items_total += line_total
         elif is_staff_category(str(item.get("Category", ""))):
             staff_items_total += line_total
+        elif is_delivery_category(str(item.get("Category", ""))):
+            delivery_items_total += line_total
         else:
             subtotal += line_total
 
@@ -522,9 +564,9 @@ def calculate_totals(
         gratuity = staff_items_total
     else:
         gratuity = (subtotal * to_decimal(gratuity_pct) / Decimal("100")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
-    taxable_base = subtotal + service_charge + gratuity
+    taxable_base = subtotal + service_charge + gratuity + delivery_items_total
     tax = (taxable_base * to_decimal(tax_pct) / Decimal("100")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
-    total = subtotal + service_charge + gratuity + tax
+    total = subtotal + service_charge + gratuity + delivery_items_total + tax
     deposit = min(to_decimal(deposit_amount), total)
     balance_due = total - deposit
 
@@ -532,6 +574,7 @@ def calculate_totals(
         "subtotal": subtotal,
         "service_charge": service_charge,
         "gratuity": gratuity,
+        "delivery_charge": delivery_items_total,
         "tax": tax,
         "total": total,
         "deposit": deposit,
@@ -700,6 +743,8 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     header_left = ParagraphStyle("header_left", parent=normal, fontName="Helvetica-Bold", fontSize=10, alignment=0)
     header_center = ParagraphStyle("header_center", parent=normal, fontName="Helvetica-Bold", fontSize=10, alignment=1)
     header_right = ParagraphStyle("header_right", parent=normal, fontName="Helvetica-Bold", fontSize=10, alignment=2)
+    company_note_style = ParagraphStyle("company_note", parent=small, leftIndent=0, firstLineIndent=0)
+    table_border_color = colors.HexColor("#cfc6bf")
 
     story = []
     if HEADER_LOGO_FILE.exists():
@@ -741,8 +786,9 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     details_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f6d7c3")),
+                ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#f6d7c3")),
+                ("GRID", (0, 0), (-1, -1), 0.2, table_border_color),
                 ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
                 ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
                 ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
@@ -752,6 +798,7 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
         )
     )
     story.append(details_table)
+
     story.append(Spacer(1, 0.7 * inch))
 
     item_rows = [["Category", "Description", "Notes", "Qty", "Unit Price", "Line Total"]]
@@ -770,31 +817,53 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
 
     items_table = Table(
         item_rows,
-        colWidths=[1.15 * inch, 2.35 * inch, 1.35 * inch, 0.45 * inch, 0.85 * inch, 0.85 * inch],
+        colWidths=[1.15 * inch, 2.55 * inch, 1.15 * inch, 0.45 * inch, 0.85 * inch, 0.85 * inch],
     )
     items_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f6d7c3")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("GRID", (0, 0), (-1, -1), 0.2, table_border_color),
                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (3, 0), (3, 0), "CENTER"),
                 ("ALIGN", (3, 1), (-1, -1), "CENTER"),
                 ("PADDING", (0, 0), (-1, -1), 5),
             ]
         )
     )
     story.append(items_table)
-    story.append(Spacer(1, 0.2 * inch))
+    story.append(Spacer(1, 0.25 * inch))
+
+    company_default_note = str(business.get("estimate_notes", "")).strip()
+    if company_default_note:
+        company_note_table = Table(
+            [[Paragraph(company_default_note.replace("\n", "<br/>"), company_note_style)]],
+            colWidths=[7.0 * inch],
+        )
+        company_note_table.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        story.append(company_note_table)
+        story.append(Spacer(1, 0.25 * inch))
 
     totals_rows = [
         ["Type", "Amount"],
         ["Subtotal", money(payload.get("subtotal", 0))],
-        ["Service", money(payload.get("service_charge", 0))],
         ["Staff", money(payload.get("gratuity", 0))],
-        ["Tax", money(payload.get("tax", 0))],
+        ["Service", money(payload.get("service_charge", 0))],
+        ["Delivery", money(payload.get("delivery_charge", 0))],
+        ["Tax (9%)", money(payload.get("tax", 0))],
         ["Total", money(payload.get("total", 0))],
         ["Deposit", money(payload.get("deposit", 0))],
         ["Balance Due", money(payload.get("balance_due", 0))],
@@ -803,13 +872,14 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     totals_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f6d7c3")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("GRID", (0, 0), (-1, -1), 0.2, table_border_color),
                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-                ("FONTNAME", (0, 5), (-1, 5), "Helvetica-Bold"),
-                ("FONTNAME", (0, 7), (-1, 7), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("FONTNAME", (0, 6), (-1, 6), "Helvetica-Bold"),
+                ("FONTNAME", (0, 8), (-1, 8), "Helvetica-Bold"),
                 ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                 ("ALIGN", (1, 1), (1, -1), "RIGHT"),
                 ("PADDING", (0, 0), (-1, -1), 5),
@@ -829,30 +899,6 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
         story.append(Paragraph("<b>Payment Terms</b>", normal))
         story.append(Paragraph(payment_terms.replace("\n", "<br/>"), small))
         story.append(Spacer(1, 0.15 * inch))
-
-    company_table = Table(
-        [
-            ["Company", business.get("business_name", ""), "Estimate #", payload.get("estimate_number", "")],
-            ["Email", business.get("business_email", ""), "Issue Date", payload.get("issue_date", "")],
-            ["Phone", business.get("business_phone", ""), "Address", business.get("business_address", "")],
-        ],
-        colWidths=[1.0 * inch, 2.4 * inch, 1.0 * inch, 2.4 * inch],
-    )
-    company_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("PADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
-    )
-    story.append(company_table)
 
     doc.build(story)
     return buffer.getvalue()
@@ -1105,7 +1151,21 @@ with clients_tab:
     clients_df = pd.DataFrame(clients_company.get("clients", []))
     if clients_df.empty:
         clients_df = pd.DataFrame(
-            columns=["client_id", "client_name", "client_email", "client_phone", "event_type", "event_date", "venue", "guest_count"]
+            columns=[
+                "client_id",
+                "client_name",
+                "client_email",
+                "client_phone",
+                "event_type",
+                "event_date",
+                "venue",
+                "guest_count",
+                "servers_count",
+                "servers_hours",
+                "kitchen_staff_count",
+                "kitchen_staff_hours",
+                "deposit_amount",
+            ]
         )
 
     edited_clients_df = st.data_editor(
@@ -1114,7 +1174,20 @@ with clients_tab:
         use_container_width=True,
         hide_index=True,
         key=f"clients_editor_{clients_company_name}",
-        column_order=["client_name", "client_email", "client_phone", "event_type", "event_date", "venue", "guest_count"],
+        column_order=[
+            "client_name",
+            "client_email",
+            "client_phone",
+            "event_type",
+            "event_date",
+            "venue",
+            "guest_count",
+            "servers_count",
+            "servers_hours",
+            "kitchen_staff_count",
+            "kitchen_staff_hours",
+            "deposit_amount",
+        ],
         column_config={
             "client_name": st.column_config.TextColumn("Client name", required=True),
             "client_email": st.column_config.TextColumn("Client email"),
@@ -1123,6 +1196,11 @@ with clients_tab:
             "event_date": st.column_config.TextColumn("Event date"),
             "venue": st.column_config.TextColumn("Venue"),
             "guest_count": st.column_config.NumberColumn("Guest count", min_value=1, step=1, format="%d"),
+            "servers_count": st.column_config.NumberColumn("Servers (#)", min_value=0, step=1, format="%d"),
+            "servers_hours": st.column_config.NumberColumn("Servers (hrs)", min_value=0, step=1, format="%d"),
+            "kitchen_staff_count": st.column_config.NumberColumn("Kitchen Staff (#)", min_value=0, step=1, format="%d"),
+            "kitchen_staff_hours": st.column_config.NumberColumn("Kitchen Staff (hrs)", min_value=0, step=1, format="%d"),
+            "deposit_amount": st.column_config.NumberColumn("Deposit ($)", min_value=0.0, step=25.0, format="$%.2f"),
         },
     )
 
@@ -1185,6 +1263,7 @@ with estimate_tab:
     estimate_builder_event_type = str(estimate_builder_client.get("event_type", "Private Event")).strip() or "Private Event"
     estimate_builder_venue = str(estimate_builder_client.get("venue", "")).strip()
     estimate_builder_guest_count = int(estimate_builder_client.get("guest_count", 50) or 50)
+    estimate_builder_deposit_amount = float(to_decimal(estimate_builder_client.get("deposit_amount", 0.0)))
 
     estimate_builder_line_items: list[dict[str, Any]] = []
     if estimate_builder_selected_products:
@@ -1194,11 +1273,10 @@ with estimate_tab:
             product = estimate_builder_product_lookup[product_id]
             qty_key = f"estimate_builder_qty__{estimate_builder_company_name}__{estimate_builder_client_id}__{product_id}"
             if qty_key not in st.session_state:
-                st.session_state[qty_key] = (
-                    float(estimate_builder_guest_count)
-                    if uses_guest_count_default(str(product.get("Category", "")))
-                    else 1.0
-                )
+                st.session_state[qty_key] = default_estimate_qty(product, estimate_builder_client, estimate_builder_guest_count)
+            notes_key = f"estimate_builder_notes__{estimate_builder_company_name}__{estimate_builder_client_id}__{product_id}"
+            if notes_key not in st.session_state:
+                st.session_state[notes_key] = str(product.get("Notes", "")).strip()
             qty_decimal = to_decimal(st.session_state[qty_key])
             unit_price_decimal = to_decimal(product.get("Unit Price", 0))
             estimate_builder_rows.append(
@@ -1206,7 +1284,7 @@ with estimate_tab:
                     "product_id": product_id,
                     "Category": product.get("Category", ""),
                     "Description": product.get("Description", ""),
-                    "Notes": product.get("Notes", ""),
+                    "Notes": st.session_state[notes_key],
                     "Qty": float(qty_decimal),
                     "Unit Price": float(unit_price_decimal),
                     "Line Total": float((qty_decimal * unit_price_decimal).quantize(TWOPLACES, rounding=ROUND_HALF_UP)),
@@ -1220,8 +1298,9 @@ with estimate_tab:
             hide_index=True,
             num_rows="fixed",
             key=f"estimate_builder_products_table__{estimate_builder_company_name}__{estimate_builder_client_id}",
-            disabled=["Category", "Description", "Notes", "Unit Price", "Line Total"],
+            disabled=["Category", "Description", "Unit Price", "Line Total"],
             column_config={
+                "Notes": st.column_config.TextColumn("Notes"),
                 "Qty": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0, format="%.2f"),
                 "Unit Price": st.column_config.NumberColumn("Unit Price", format="$%.2f"),
                 "Line Total": st.column_config.NumberColumn("Line Total", format="$%.2f"),
@@ -1229,8 +1308,11 @@ with estimate_tab:
         )
         for index, product_id in enumerate(estimate_builder_selected_products):
             qty_key = f"estimate_builder_qty__{estimate_builder_company_name}__{estimate_builder_client_id}__{product_id}"
+            notes_key = f"estimate_builder_notes__{estimate_builder_company_name}__{estimate_builder_client_id}__{product_id}"
             qty_value = to_decimal(edited_estimate_builder_df.iloc[index]["Qty"])
+            notes_value = str(edited_estimate_builder_df.iloc[index]["Notes"]).strip()
             st.session_state[qty_key] = float(qty_value)
+            st.session_state[notes_key] = notes_value
             product = estimate_builder_product_lookup[product_id]
             unit_price_decimal = to_decimal(product.get("Unit Price", 0))
             estimate_builder_line_items.append(
@@ -1238,7 +1320,7 @@ with estimate_tab:
                     "product_id": product_id,
                     "Category": product.get("Category", ""),
                     "Description": product.get("Description", ""),
-                    "Notes": product.get("Notes", ""),
+                    "Notes": notes_value,
                     "Qty": float(qty_value),
                     "Unit Price": float(unit_price_decimal),
                     "Line Total": float((qty_value * unit_price_decimal).quantize(TWOPLACES, rounding=ROUND_HALF_UP)),
@@ -1247,7 +1329,13 @@ with estimate_tab:
     else:
         st.info("Select one or more products to build this estimate.")
 
-    estimate_builder_totals = calculate_totals(estimate_builder_line_items, 0.0, 0.0, 0.0, 0.0)
+    estimate_builder_totals = calculate_totals(
+        estimate_builder_line_items,
+        0.0,
+        0.0,
+        0.0,
+        estimate_builder_deposit_amount,
+    )
 
     if "estimate_builder_number" not in st.session_state:
         st.session_state["estimate_builder_number"] = next_estimate_number()
