@@ -430,6 +430,9 @@ def save_company(
 
 
 def delete_company(store: dict[str, Any], company_name: str) -> dict[str, Any]:
+    company = find_company(store["companies"], company_name)
+    if company:
+        delete_estimates_for_company(company.get("company_id", ""), company.get("business_name", ""))
     remaining_companies = [
         company
         for company in store["companies"]
@@ -442,6 +445,19 @@ def delete_company(store: dict[str, Any], company_name: str) -> dict[str, Any]:
     }
     save_company_store(new_store)
     return new_store
+
+
+def delete_estimates_for_company(company_id: str, company_name: str) -> None:
+    for path in ESTIMATES_DIR.glob("*.json"):
+        payload = load_json(path, {})
+        if not payload:
+            continue
+        payload_company_id = str(payload.get("company_id", "")).strip()
+        payload_company_name = str(payload.get("company_name", "")).strip()
+        if payload_company_id == str(company_id).strip() or (
+            not payload_company_id and normalize_company_name(payload_company_name) == normalize_company_name(company_name)
+        ):
+            path.unlink()
 
 
 def find_product(company: dict[str, Any], product_id: str) -> dict[str, Any] | None:
@@ -482,6 +498,28 @@ def save_company_products(
     updated_company = build_company_record(name=company["business_name"], source={**company, "products": updated_products})
     updated_store, _ = save_company(store, updated_company, company_name)
     return updated_store, updated_company
+
+
+def normalize_product_rows_for_save(product_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized_rows: list[dict[str, Any]] = []
+    for row in product_rows:
+        normalized_row = dict(row)
+        normalized_row["Unit Price"] = float(to_decimal(row.get("Unit Price", 0.0)))
+        normalized_rows.append(normalized_row)
+    return normalized_rows
+
+
+def has_invalid_product_rows(product_rows: list[dict[str, Any]]) -> bool:
+    for row in product_rows:
+        values = [
+            str(row.get("Category", "")).strip(),
+            str(row.get("Description", "")).strip(),
+            str(row.get("Notes", "")).strip(),
+            str(row.get("Unit Price", "")).strip(),
+        ]
+        if any(value not in {"", "0", "0.0", "0.00", "nan", "None"} for value in values) and not str(row.get("Description", "")).strip():
+            return True
+    return False
 
 
 def find_client(company: dict[str, Any], client_id: str) -> dict[str, Any] | None:
@@ -1104,6 +1142,8 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     normal.fontName = "Helvetica"
     normal.fontSize = 10
     small = ParagraphStyle("small", parent=normal, fontSize=9, leading=12)
+    footer_detail_style = ParagraphStyle("footer_detail", parent=small, fontSize=9, leading=14)
+    footer_heading_style = ParagraphStyle("footer_heading", parent=normal, fontName="Helvetica-Bold", fontSize=11, leading=14)
     header_left = ParagraphStyle("header_left", parent=normal, fontName="Helvetica-Bold", fontSize=10, alignment=0)
     header_center = ParagraphStyle("header_center", parent=normal, fontName="Helvetica-Bold", fontSize=10, alignment=1)
     header_right = ParagraphStyle("header_right", parent=normal, fontName="Helvetica-Bold", fontSize=10, alignment=2)
@@ -1253,6 +1293,41 @@ def estimate_to_pdf_bytes(payload: dict[str, Any]) -> bytes:
     story.append(totals_table)
     story.append(Spacer(1, 0.2 * inch))
 
+    business_phone = str(business.get("business_phone", "")).strip()
+    business_email = str(business.get("business_email", "")).strip()
+    business_address = str(business.get("business_address", "")).strip()
+    footer_rows = [
+        ["☎", business_phone, ""],
+        ["✉", business_email, ""],
+        ["⌂", business_address.replace("\n", "<br/>") if business_address else "", "NOTES"],
+    ]
+    footer_table = Table(
+        [
+            [
+                Paragraph(icon, footer_heading_style) if icon else Paragraph("", footer_detail_style),
+                Paragraph(value, footer_detail_style) if value else Paragraph("", footer_detail_style),
+                Paragraph(note, footer_heading_style) if note else Paragraph("", footer_detail_style),
+            ]
+            for icon, value, note in footer_rows
+        ],
+        colWidths=[0.3 * inch, 4.6 * inch, 2.1 * inch],
+    )
+    footer_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (0, -1), 6),
+                ("RIGHTPADDING", (1, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    story.append(footer_table)
+    story.append(Spacer(1, 0.15 * inch))
+
     notes = payload.get("notes", "")
     payment_terms = business.get("payment_terms", "")
     if notes:
@@ -1311,7 +1386,15 @@ def confirm_delete_company_dialog(company_name: str, store: dict[str, Any]) -> N
             st.rerun()
     with c2:
         if st.button("Confirm Delete", use_container_width=True, type="primary"):
-            delete_company(store, company_name)
+            latest_store = load_company_store()
+            updated_store = delete_company(latest_store, company_name)
+            st.session_state.pop("company_page_choice", None)
+            st.session_state.pop("estimate_builder_load_selection", None)
+            st.session_state["estimate_builder_active_selection"] = NEW_ESTIMATE_OPTION
+            if updated_store.get("selected_company"):
+                st.session_state["estimate_builder_company_name"] = updated_store["selected_company"]
+            else:
+                st.session_state.pop("estimate_builder_company_name", None)
             st.session_state["company_editor_context"] = "new"
             st.rerun()
 
@@ -1536,43 +1619,75 @@ with company_tab:
     payment_terms = st.text_area("Default payment terms", key="company_payment_terms", height=110)
     estimate_notes = st.text_area("Default note", key="company_estimate_notes", height=110)
 
+    new_company_has_input = any(
+        [
+            cleaned_name := business_name.strip(),
+            business_email.strip(),
+            business_phone.strip(),
+            business_address.strip(),
+            float(default_tax) != 0.0,
+            float(default_service) != 0.0,
+            float(default_gratuity) != 0.0,
+            payment_terms.strip(),
+            estimate_notes.strip(),
+        ]
+    )
+    cleaned_name = business_name.strip()
+    company_data = build_company_record(
+        name=cleaned_name or (selected_company["business_name"] if selected_company else ""),
+        source={
+            "company_id": selected_company.get("company_id", "") if selected_company else "",
+            "products": selected_company.get("products", []) if selected_company else [],
+            "clients": selected_company.get("clients", []) if selected_company else [],
+            "business_email": business_email,
+            "business_phone": business_phone,
+            "business_address": business_address,
+            "default_tax_percent": default_tax,
+            "default_service_charge_percent": default_service,
+            "default_gratuity_percent": default_gratuity,
+            "payment_terms": payment_terms,
+            "estimate_notes": estimate_notes,
+        },
+    )
+    if creating_new_company and new_company_has_input and cleaned_name and not company_name_exists(companies, cleaned_name):
+        company_data["company_id"] = next_company_id(companies)
+        _, saved_name = save_company(company_store, company_data, None)
+        st.session_state["company_editor_context"] = f"existing:{saved_name}"
+        st.session_state["company_autosave_message"] = f"Saved company: {saved_name}"
+        st.rerun()
+
+    company_has_changes = (
+        not creating_new_company
+        and selected_company is not None
+        and company_data != selected_company
+    )
+    company_invalid = (
+        creating_new_company
+        or not cleaned_name
+        or company_name_exists(companies, cleaned_name, exclude_name=company_choice)
+    )
+    if company_has_changes and not company_invalid:
+        _, saved_name = save_company(company_store, company_data, company_choice)
+        st.session_state["company_editor_context"] = f"existing:{saved_name}"
+        st.session_state["company_autosave_message"] = f"Saved company: {saved_name}"
+        st.rerun()
+
+    if st.session_state.pop("company_autosave_message", ""):
+        st.caption("Company changes saved automatically.")
+    elif creating_new_company:
+        st.caption("Create a company by entering a unique business name.")
+    elif not cleaned_name:
+        st.caption("Company changes will save automatically once the business name is filled in.")
+    elif company_name_exists(companies, cleaned_name, exclude_name=company_choice):
+        st.caption("Company changes will save automatically once the business name is unique.")
+
     action_columns = st.columns([1, 4, 1])
-    save_label = "Create company" if creating_new_company else "Save company"
-    with action_columns[0]:
-        save_clicked = st.button(save_label, use_container_width=True)
     with action_columns[2]:
         delete_clicked = (
             st.button("Delete company", use_container_width=True, type="secondary")
             if not creating_new_company
             else False
         )
-
-    if save_clicked:
-        cleaned_name = business_name.strip()
-        if not cleaned_name:
-            st.error("Business name is required.")
-        elif company_name_exists(companies, cleaned_name, exclude_name=None if creating_new_company else company_choice):
-            st.error("Company names must be unique.")
-        else:
-            company_data = build_company_record(
-                name=cleaned_name,
-                source={
-                    "products": selected_company.get("products", []) if selected_company else [],
-                    "clients": selected_company.get("clients", []) if selected_company else [],
-                    "business_email": business_email,
-                    "business_phone": business_phone,
-                    "business_address": business_address,
-                    "default_tax_percent": default_tax,
-                    "default_service_charge_percent": default_service,
-                    "default_gratuity_percent": default_gratuity,
-                    "payment_terms": payment_terms,
-                    "estimate_notes": estimate_notes,
-                },
-            )
-            _, saved_name = save_company(company_store, company_data, None if creating_new_company else company_choice)
-            st.session_state["company_editor_context"] = f"existing:{saved_name}"
-            st.success(f"Saved company: {saved_name}")
-            st.rerun()
 
     if delete_clicked and selected_company:
         confirm_delete_company_dialog(selected_company["business_name"], company_store)
@@ -1611,13 +1726,22 @@ with products_tab:
         },
     )
 
-    if st.button("Save products", key="save_products_button"):
-        product_rows = edited_products_df.to_dict("records")
+    product_rows = normalize_product_rows_for_save(edited_products_df.to_dict("records"))
+    current_saved_product_rows = normalize_product_rows_for_save(pd.DataFrame(products_company.get("products", [])).to_dict("records"))
+    products_changed = product_rows != current_saved_product_rows
+    products_invalid = has_invalid_product_rows(product_rows)
+
+    if products_changed and not products_invalid:
         _, updated_company = save_company_products(company_store, products_company_name, product_rows)
         st.session_state["company_editor_context"] = f"existing:{updated_company['business_name']}"
         st.session_state.pop("estimate_form_context", None)
-        st.success(f"Saved products for {updated_company['business_name']}.")
+        st.session_state["products_autosave_message"] = f"Saved products for {updated_company['business_name']}."
         st.rerun()
+
+    if st.session_state.pop("products_autosave_message", ""):
+        st.caption("Product changes saved automatically.")
+    elif products_invalid:
+        st.caption("Product changes will save automatically once each edited row has a description.")
 
 with clients_tab:
     st.subheader("Clients")

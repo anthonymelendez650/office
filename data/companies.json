@@ -156,22 +156,6 @@
           "kitchen_staff_hours": 8,
           "deposit_amount": 0.0,
           "utensils_buffer": 20
-        },
-        {
-          "client_id": "client-2dc4721c48",
-          "client_name": "Anthony Melendez",
-          "client_email": "",
-          "client_phone": "",
-          "event_type": "Private Event",
-          "event_date": "",
-          "venue": "",
-          "guest_count": 50,
-          "servers_count": 0,
-          "servers_hours": 0,
-          "kitchen_staff_count": 0,
-          "kitchen_staff_hours": 0,
-          "deposit_amount": 0.0,
-          "utensils_buffer": 0
         }
       ]
     }
