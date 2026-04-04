@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
@@ -175,14 +176,18 @@ def next_product_id(products: list[dict[str, Any]]) -> str:
 
 
 def next_client_id(clients: list[dict[str, Any]]) -> str:
+    return f"client-{uuid4().hex[:10]}"
+
+
+def next_company_id(companies: list[dict[str, Any]]) -> str:
     highest = 0
-    for client in clients:
-        client_id = str(client.get("client_id", ""))
-        if client_id.startswith("client-"):
-            suffix = client_id.removeprefix("client-")
+    for company in companies:
+        company_id = str(company.get("company_id", ""))
+        if company_id.startswith("company-"):
+            suffix = company_id.removeprefix("company-")
             if suffix.isdigit():
                 highest = max(highest, int(suffix))
-    return f"client-{highest + 1}"
+    return f"company-{highest + 1}"
 
 
 def build_product_record(source: dict[str, Any] | None = None, product_id: str | None = None) -> dict[str, Any]:
@@ -286,6 +291,7 @@ def build_company_record(name: str | None = None, source: dict[str, Any] | None 
     if source:
         company.update({key: source.get(key, company[key]) for key in company})
     business_name = (name or company.get("business_name") or DEFAULT_SETTINGS["business_name"]).strip()
+    company["company_id"] = str(source.get("company_id", "")).strip() if source else ""
     company["business_name"] = business_name or DEFAULT_SETTINGS["business_name"]
     company["products"] = normalize_products(source.get("products") if source else [])
     company["clients"] = normalize_clients(source.get("clients") if source else [])
@@ -329,26 +335,35 @@ def load_company_store() -> dict[str, Any]:
 
     companies: list[dict[str, Any]] = []
     seen: set[str] = set()
+    changed = False
     for company in raw.get("companies", []):
         if not isinstance(company, dict):
             continue
         normalized = normalize_company_name(company.get("business_name", ""))
         if not normalized or normalized in seen:
             continue
-        companies.append(build_company_record(source=company))
+        normalized_company = build_company_record(source=company)
+        if not normalized_company["company_id"]:
+            normalized_company["company_id"] = next_company_id(companies + [normalized_company])
+            changed = True
+        companies.append(normalized_company)
         seen.add(normalized)
 
     if not companies:
         companies = default_company_store()["companies"]
+        changed = True
 
     selected_company = raw.get("selected_company", "")
     if not find_company(companies, selected_company):
         selected_company = companies[0]["business_name"]
 
-    return {
+    store = {
         "selected_company": selected_company,
         "companies": companies,
     }
+    if changed:
+        save_company_store(store)
+    return store
 
 
 def save_company_store(store: dict[str, Any]) -> None:
@@ -363,6 +378,14 @@ def find_company(companies: list[dict[str, Any]], name: str) -> dict[str, Any] |
     normalized = normalize_company_name(name)
     for company in companies:
         if normalize_company_name(company.get("business_name", "")) == normalized:
+            return company
+    return None
+
+
+def find_company_by_id(companies: list[dict[str, Any]], company_id: str) -> dict[str, Any] | None:
+    normalized_company_id = str(company_id).strip()
+    for company in companies:
+        if str(company.get("company_id", "")).strip() == normalized_company_id:
             return company
     return None
 
@@ -476,6 +499,10 @@ def client_label(client: dict[str, Any]) -> str:
     return name
 
 
+def client_name_label(client: dict[str, Any]) -> str:
+    return str(client.get("client_name", "")).strip()
+
+
 def save_company_clients(
     store: dict[str, Any],
     company_name: str,
@@ -511,6 +538,83 @@ def save_company_clients(
     return updated_store, updated_company
 
 
+def normalize_client_rows_for_save(client_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized_rows: list[dict[str, Any]] = []
+    for row in client_rows:
+        normalized_row = dict(row)
+        normalized_row["deposit_amount"] = float(to_decimal(row.get("deposit_amount", row.get("Deposit ($)", 0.0))))
+        normalized_rows.append(normalized_row)
+    return normalized_rows
+
+
+def has_invalid_client_rows(client_rows: list[dict[str, Any]]) -> bool:
+    for row in client_rows:
+        values = [
+            str(row.get("client_name", "")).strip(),
+            str(row.get("client_email", "")).strip(),
+            str(row.get("client_phone", "")).strip(),
+            str(row.get("event_type", "")).strip(),
+            str(row.get("event_date", "")).strip(),
+            str(row.get("venue", "")).strip(),
+            str(row.get("guest_count", "")).strip(),
+            str(row.get("servers_count", "")).strip(),
+            str(row.get("servers_hours", "")).strip(),
+            str(row.get("kitchen_staff_count", "")).strip(),
+            str(row.get("kitchen_staff_hours", "")).strip(),
+            str(row.get("deposit_amount", "")).strip(),
+            str(row.get("utensils_buffer", "")).strip(),
+        ]
+        if any(value not in {"", "0", "0.0", "0.00", "nan", "None"} for value in values) and not str(row.get("client_name", "")).strip():
+            return True
+    return False
+
+
+def add_company_client(store: dict[str, Any], company_name: str) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    company = find_company(store["companies"], company_name)
+    assert company is not None
+
+    new_client = build_client_record(
+        source={"client_name": "New Client"},
+        client_id=next_client_id(company.get("clients", [])),
+    )
+    updated_clients = company.get("clients", []) + [new_client]
+    updated_company = build_company_record(name=company["business_name"], source={**company, "clients": updated_clients})
+    updated_store, _ = save_company(store, updated_company, company_name)
+    return updated_store, updated_company, new_client
+
+
+def delete_estimates_for_client(company_id: str, company_name: str, client_id: str) -> None:
+    for path in ESTIMATES_DIR.glob("*.json"):
+        payload = load_json(path, {})
+        if not payload:
+            continue
+        payload_company_id = str(payload.get("company_id", "")).strip()
+        payload_company_name = str(payload.get("company_name", "")).strip()
+        if (
+            (payload_company_id == str(company_id).strip() or (not payload_company_id and normalize_company_name(payload_company_name) == normalize_company_name(company_name)))
+            and str(payload.get("client_id", "")).strip() == str(client_id).strip()
+        ):
+            path.unlink()
+
+
+def delete_company_client(
+    store: dict[str, Any],
+    company_name: str,
+    client_id: str,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    company = find_company(store["companies"], company_name)
+    assert company is not None
+
+    remaining_clients = [
+        client for client in company.get("clients", []) if str(client.get("client_id", "")).strip() != str(client_id).strip()
+    ]
+    delete_estimates_for_client(company.get("company_id", ""), company.get("business_name", ""), client_id)
+    updated_company = build_company_record(name=company["business_name"], source={**company, "clients": remaining_clients})
+    updated_store, _ = save_company(store, updated_company, company_name)
+    next_client = remaining_clients[0] if remaining_clients else None
+    return updated_store, next_client
+
+
 def money(value: Decimal | float | int | str) -> str:
     amount = to_decimal(value)
     return f"${amount:,.2f}"
@@ -536,16 +640,40 @@ def next_estimate_number() -> str:
     return f"EST-{current}"
 
 
-def list_saved_estimates() -> list[dict[str, Any]]:
+def migrate_estimate_payload_links(payload: dict[str, Any], companies: list[dict[str, Any]]) -> tuple[dict[str, Any], bool]:
+    changed = False
+    company_id = str(payload.get("company_id", "")).strip()
+    linked_company = find_company_by_id(companies, company_id) if company_id else None
+    if not linked_company:
+        linked_company = find_company(companies, str(payload.get("company_name", "")).strip())
+        if linked_company:
+            payload["company_id"] = linked_company["company_id"]
+            changed = True
+
+    business = payload.get("business", {})
+    if isinstance(business, dict) and linked_company and str(business.get("company_id", "")).strip() != linked_company["company_id"]:
+        business["company_id"] = linked_company["company_id"]
+        payload["business"] = business
+        changed = True
+    return payload, changed
+
+
+def list_saved_estimates(companies: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for path in sorted(ESTIMATES_DIR.glob("*.json"), reverse=True):
         data = load_json(path, {})
         if not data:
             continue
+        if companies is not None:
+            data, changed = migrate_estimate_payload_links(data, companies)
+            if changed:
+                save_json(path, data)
         items.append(
             {
                 "file": path.name,
                 "estimate_number": data.get("estimate_number", path.stem),
+                "company_id": str(data.get("company_id", "")).strip(),
+                "client_id": str(data.get("client_id", "")).strip(),
                 "company_name": data.get("company_name", data.get("business", {}).get("business_name", "")),
                 "client_name": data.get("client_name", ""),
                 "event_date": data.get("event_date", ""),
@@ -635,6 +763,7 @@ def build_estimate_payload(
         "estimate_number": estimate_number,
         "created_at": now,
         "updated_at": now,
+        "company_id": company["company_id"],
         "company_name": company["business_name"],
         "business": company,
         **form_data,
@@ -664,8 +793,13 @@ def save_estimate(payload: dict[str, Any], existing_file: str | None = None) -> 
     return path
 
 
-def load_estimate_file(filename: str) -> dict[str, Any]:
-    return load_json(ESTIMATES_DIR / filename, {})
+def load_estimate_file(filename: str, companies: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    payload = load_json(ESTIMATES_DIR / filename, {})
+    if payload and companies is not None:
+        payload, changed = migrate_estimate_payload_links(payload, companies)
+        if changed:
+            save_json(ESTIMATES_DIR / filename, payload)
+    return payload
 
 
 def delete_estimate_file(filename: str) -> None:
@@ -706,7 +840,7 @@ def confirm_delete_estimate_dialog(filename: str, records: list[dict[str, Any]])
             if next_selection == NEW_ESTIMATE_OPTION:
                 reset_estimate_builder_state(next_estimate_number())
             else:
-                next_loaded = load_estimate_file(next_selection)
+                next_loaded = load_estimate_file(next_selection, companies)
                 if next_loaded:
                     queue_estimate_load(next_selection, next_loaded)
                 else:
@@ -760,6 +894,8 @@ def ensure_estimate_snapshot_company(loaded: dict[str, Any]) -> dict[str, Any]:
         name=str(loaded.get("company_name", "")).strip() or None,
         source=loaded.get("business", {}) if isinstance(loaded.get("business", {}), dict) else None,
     )
+    if not snapshot["company_id"]:
+        snapshot["company_id"] = str(loaded.get("company_id", "")).strip()
     saved_client = build_client_record(
         source={
             "client_id": loaded.get("client_id", ""),
@@ -784,8 +920,10 @@ def ensure_estimate_snapshot_company(loaded: dict[str, Any]) -> dict[str, Any]:
     return snapshot
 
 
-def apply_loaded_estimate_to_session(loaded: dict[str, Any], filename: str) -> None:
-    company_name = str(loaded.get("company_name", "")).strip()
+def apply_loaded_estimate_to_session(loaded: dict[str, Any], filename: str, companies: list[dict[str, Any]] | None = None) -> None:
+    company_id = str(loaded.get("company_id", "")).strip()
+    linked_company = find_company_by_id(companies or [], company_id) if company_id else None
+    company_name = linked_company["business_name"] if linked_company else str(loaded.get("company_name", "")).strip()
     client_id = str(loaded.get("client_id", "")).strip()
     selected_product_ids = [
         str(product_id).strip()
@@ -803,6 +941,7 @@ def apply_loaded_estimate_to_session(loaded: dict[str, Any], filename: str) -> N
     st.session_state["estimate_builder_loaded_file"] = filename
     estimate_number = str(loaded.get("estimate_number", "")).strip()
     st.session_state["estimate_builder_number"] = estimate_number or next_estimate_number()
+    st.session_state["estimate_builder_company_id"] = company_id
     st.session_state["estimate_builder_company_name"] = company_name
     if client_id:
         st.session_state["estimate_builder_client_id"] = client_id
@@ -820,6 +959,17 @@ def apply_loaded_estimate_to_session(loaded: dict[str, Any], filename: str) -> N
                 item.get("Notes", "")
             ).strip()
     st.session_state["estimate_builder_active_selection"] = filename
+
+
+def filter_saved_estimates(records: list[dict[str, Any]], company_id: str, client_id: str) -> list[dict[str, Any]]:
+    normalized_company_id = str(company_id).strip()
+    normalized_client_id = str(client_id).strip()
+    return [
+        record
+        for record in records
+        if str(record.get("company_id", "")).strip() == normalized_company_id
+        and str(record.get("client_id", "")).strip() == normalized_client_id
+    ]
 
 
 def refresh_line_items_for_company(line_items: list[dict[str, Any]], company: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1154,6 +1304,40 @@ def confirm_delete_company_dialog(company_name: str, store: dict[str, Any]) -> N
             st.rerun()
 
 
+@st.dialog("Delete Client")
+def confirm_delete_client_dialog(company_name: str, clients: list[dict[str, Any]], store: dict[str, Any]) -> None:
+    client_lookup = {str(client.get("client_id", "")).strip(): client for client in clients}
+    client_options = list(client_lookup.keys())
+    selected_client_id = st.selectbox(
+        "Client to delete",
+        options=client_options,
+        format_func=lambda client_id: client_name_label(client_lookup[client_id]) or "Unnamed client",
+        key=f"delete_client_dialog_select__{company_name}",
+    )
+    client = client_lookup[selected_client_id]
+    client_name = str(client.get("client_name", "")).strip() or "Unnamed client"
+    st.warning(f"Delete client?\n\n{client_name}\n\nThis will also delete all saved estimates for this client.")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Cancel", use_container_width=True):
+            st.rerun()
+    with c2:
+        if st.button("Confirm Delete", use_container_width=True, type="primary"):
+            _, next_client = delete_company_client(store, company_name, selected_client_id)
+            queue_client_selection(str(next_client.get("client_id", "")).strip() if next_client else "")
+            if (
+                st.session_state.get("estimate_builder_company_name") == company_name
+                and st.session_state.get("estimate_builder_client_id") == selected_client_id
+            ):
+                reset_estimate_builder_state(next_estimate_number())
+            st.session_state.pop("estimate_form_context", None)
+            st.rerun()
+
+
+def queue_client_selection(client_id: str) -> None:
+    st.session_state["clients_pending_selected_client_id"] = client_id
+
+
 def sync_company_editor(company: dict[str, Any] | None, creating_new: bool) -> None:
     context = "new" if creating_new else f"existing:{company['business_name']}"
     if st.session_state.get("company_editor_context") == context:
@@ -1375,6 +1559,13 @@ with clients_tab:
         st.warning("Create a company first before adding clients.")
         st.stop()
 
+    pending_selected_client_id = st.session_state.pop("clients_pending_selected_client_id", None)
+    if pending_selected_client_id is not None:
+        if pending_selected_client_id:
+            st.session_state["clients_selected_client_id"] = pending_selected_client_id
+        else:
+            st.session_state.pop("clients_selected_client_id", None)
+
     clients_company_name = st.selectbox(
         "Company for clients",
         options=company_names,
@@ -1383,8 +1574,9 @@ with clients_tab:
     )
     clients_company = find_company(companies, clients_company_name)
     assert clients_company is not None
+    clients_list = clients_company.get("clients", [])
 
-    clients_df = pd.DataFrame(clients_company.get("clients", []))
+    clients_df = pd.DataFrame(clients_list)
     if clients_df.empty:
         clients_df = pd.DataFrame(
             columns=[
@@ -1407,7 +1599,7 @@ with clients_tab:
 
     edited_clients_df = st.data_editor(
         clients_df,
-        num_rows="dynamic",
+        num_rows="fixed",
         use_container_width=True,
         hide_index=True,
         key=f"clients_editor_{clients_company_name}",
@@ -1438,18 +1630,58 @@ with clients_tab:
             "servers_hours": st.column_config.NumberColumn("Servers (hrs)", min_value=0, step=1, format="%d"),
             "kitchen_staff_count": st.column_config.NumberColumn("Kitchen Staff (#)", min_value=0, step=1, format="%d"),
             "kitchen_staff_hours": st.column_config.NumberColumn("Kitchen Staff (hrs)", min_value=0, step=1, format="%d"),
-            "deposit_amount": st.column_config.NumberColumn("Deposit ($)", min_value=0.0, step=25.0, format="$%.2f"),
+            "deposit_amount": st.column_config.NumberColumn(
+                "Deposit ($)",
+                min_value=0.0,
+                default=0.0,
+                step=25.0,
+                format="$%.2f",
+            ),
             "utensils_buffer": st.column_config.NumberColumn("Utensils Buffer", min_value=0, step=1, format="%d"),
         },
     )
 
-    if st.button("Save clients", key="save_clients_button"):
-        client_rows = edited_clients_df.to_dict("records")
+    client_rows = normalize_client_rows_for_save(edited_clients_df.to_dict("records"))
+    current_saved_client_rows = normalize_client_rows_for_save(pd.DataFrame(clients_company.get("clients", [])).to_dict("records"))
+    clients_changed = client_rows != current_saved_client_rows
+    clients_invalid = has_invalid_client_rows(client_rows)
+
+    if clients_changed and not clients_invalid:
         _, updated_company = save_company_clients(company_store, clients_company_name, client_rows)
         st.session_state["company_editor_context"] = f"existing:{updated_company['business_name']}"
         st.session_state.pop("estimate_form_context", None)
-        st.success(f"Saved clients for {updated_company['business_name']}.")
+        st.session_state["clients_autosave_message"] = f"Saved clients for {updated_company['business_name']}."
         st.rerun()
+
+    if st.session_state.pop("clients_autosave_message", ""):
+        st.caption("Client changes saved automatically.")
+    elif clients_invalid:
+        st.caption("Client changes will save automatically once the row has a client name.")
+
+    client_action_columns = st.columns([1, 1, 4])
+    with client_action_columns[0]:
+        add_client_clicked = st.button("Add Client", key="add_client_button", use_container_width=True)
+    with client_action_columns[1]:
+        delete_client_clicked = st.button(
+            "Delete Client",
+            key="delete_client_button",
+            use_container_width=True,
+            type="secondary",
+            disabled=not bool(clients_list),
+        )
+
+    if add_client_clicked:
+        _, updated_company, new_client = add_company_client(company_store, clients_company_name)
+        st.session_state["company_editor_context"] = f"existing:{updated_company['business_name']}"
+        st.session_state.pop("estimate_form_context", None)
+        st.rerun()
+
+    if delete_client_clicked and clients_list:
+        confirm_delete_client_dialog(
+            clients_company_name,
+            clients_list,
+            company_store,
+        )
 
 with estimate_tab:
     st.subheader("Estimate")
@@ -1463,14 +1695,68 @@ with estimate_tab:
         pending_payload = pending_estimate_load.get("payload", {})
         if pending_file and isinstance(pending_payload, dict) and pending_payload:
             st.session_state["estimate_builder_load_selection"] = pending_file
-            apply_loaded_estimate_to_session(pending_payload, pending_file)
+            apply_loaded_estimate_to_session(pending_payload, pending_file, companies)
+    loaded_estimate = st.session_state.get("estimate_builder_loaded_payload", {})
 
-    saved_estimate_records = list_saved_estimates()
+    if "estimate_builder_company_name" not in st.session_state:
+        st.session_state["estimate_builder_company_name"] = company_store["selected_company"] or company_names[0]
+
+    estimate_builder_company_name = st.selectbox(
+        "Company",
+        options=company_names,
+        key="estimate_builder_company_name",
+    )
+    estimate_builder_company = find_company(companies, estimate_builder_company_name)
+    assert estimate_builder_company is not None
+    estimate_builder_company_id = str(estimate_builder_company.get("company_id", "")).strip()
+
+    estimate_builder_clients = estimate_builder_company.get("clients", [])
+    if not estimate_builder_clients:
+        st.warning("Add at least one client in the Clients tab before building an estimate for this company.")
+        st.stop()
+
+    estimate_builder_client_lookup = {client["client_id"]: client for client in estimate_builder_clients}
+    estimate_builder_client_options = [client["client_id"] for client in estimate_builder_clients]
+    if "estimate_builder_client_id" not in st.session_state or st.session_state["estimate_builder_client_id"] not in estimate_builder_client_options:
+        preferred_client_id = ""
+        if str(loaded_estimate.get("company_id", "")).strip() == estimate_builder_company_id:
+            preferred_client_id = str(loaded_estimate.get("client_id", "")).strip()
+        st.session_state["estimate_builder_client_id"] = (
+            preferred_client_id if preferred_client_id in estimate_builder_client_options else estimate_builder_client_options[0]
+        )
+    estimate_builder_client_id = st.selectbox(
+        "Client",
+        options=estimate_builder_client_options,
+        key="estimate_builder_client_id",
+        format_func=lambda client_id: client_name_label(estimate_builder_client_lookup[client_id]),
+    )
+    estimate_builder_client = estimate_builder_client_lookup[estimate_builder_client_id]
+    loaded_estimate_matches_pair = (
+        bool(loaded_estimate)
+        and str(loaded_estimate.get("company_id", "")).strip() == estimate_builder_company_id
+        and str(loaded_estimate.get("client_id", "")).strip() == estimate_builder_client_id
+    )
+
+    saved_estimate_records = filter_saved_estimates(
+        list_saved_estimates(companies),
+        estimate_builder_company_id,
+        estimate_builder_client_id,
+    )
     load_estimate_options = [NEW_ESTIMATE_OPTION] + [record["file"] for record in saved_estimate_records]
     if st.session_state.get("estimate_builder_load_selection") not in load_estimate_options:
         st.session_state["estimate_builder_load_selection"] = NEW_ESTIMATE_OPTION
-    if "estimate_builder_active_selection" not in st.session_state:
-        st.session_state["estimate_builder_active_selection"] = st.session_state["estimate_builder_load_selection"]
+    if (
+        st.session_state.get("estimate_builder_active_selection") not in load_estimate_options
+        and st.session_state.get("estimate_builder_active_selection") != NEW_ESTIMATE_OPTION
+    ):
+        st.session_state["estimate_builder_active_selection"] = NEW_ESTIMATE_OPTION
+    if (
+        st.session_state.get("estimate_builder_load_selection") == NEW_ESTIMATE_OPTION
+        and bool(loaded_estimate)
+        and not loaded_estimate_matches_pair
+    ):
+        reset_estimate_builder_state(next_estimate_number())
+        st.rerun()
 
     selected_estimate_option = st.selectbox(
         "Load Estimate",
@@ -1482,7 +1768,7 @@ with estimate_tab:
         if selected_estimate_option == NEW_ESTIMATE_OPTION:
             reset_estimate_builder_state(next_estimate_number())
         else:
-            loaded_selection = load_estimate_file(selected_estimate_option)
+            loaded_selection = load_estimate_file(selected_estimate_option, companies)
             if loaded_selection:
                 queue_estimate_load(selected_estimate_option, loaded_selection)
             else:
@@ -1490,53 +1776,12 @@ with estimate_tab:
                 st.warning("That saved estimate could not be loaded.")
         st.rerun()
 
-    loaded_estimate = st.session_state.get("estimate_builder_loaded_payload", {})
-    loaded_snapshot_active = selected_estimate_option != NEW_ESTIMATE_OPTION and bool(loaded_estimate)
-
-    if "estimate_builder_company_name" not in st.session_state:
-        st.session_state["estimate_builder_company_name"] = company_store["selected_company"] or company_names[0]
-    if loaded_snapshot_active:
-        saved_company_name = str(loaded_estimate.get("company_name", "")).strip()
-        if saved_company_name and saved_company_name not in company_names:
-            company_names = company_names + [saved_company_name]
-
-    estimate_builder_company_name = st.selectbox(
-        "Company",
-        options=company_names,
-        key="estimate_builder_company_name",
+    loaded_snapshot_active = (
+        selected_estimate_option != NEW_ESTIMATE_OPTION
+        and bool(loaded_estimate)
+        and str(loaded_estimate.get("company_id", "")).strip() == estimate_builder_company_id
+        and str(loaded_estimate.get("client_id", "")).strip() == estimate_builder_client_id
     )
-    estimate_builder_company = None
-    if loaded_snapshot_active and normalize_company_name(estimate_builder_company_name) == normalize_company_name(
-        loaded_estimate.get("company_name", "")
-    ):
-        estimate_builder_company = ensure_estimate_snapshot_company(loaded_estimate)
-    if not estimate_builder_company:
-        estimate_builder_company = find_company(companies, estimate_builder_company_name)
-    assert estimate_builder_company is not None
-
-    estimate_builder_clients = estimate_builder_company.get("clients", [])
-    if not estimate_builder_clients:
-        st.warning("Add at least one client in the Clients tab before building an estimate for this company.")
-        st.stop()
-
-    estimate_builder_client_lookup = {client["client_id"]: client for client in estimate_builder_clients}
-    estimate_builder_client_options = [client["client_id"] for client in estimate_builder_clients]
-    if "estimate_builder_client_id" not in st.session_state or st.session_state["estimate_builder_client_id"] not in estimate_builder_client_options:
-        preferred_client_id = ""
-        if loaded_snapshot_active and normalize_company_name(estimate_builder_company_name) == normalize_company_name(
-            loaded_estimate.get("company_name", "")
-        ):
-            preferred_client_id = str(loaded_estimate.get("client_id", "")).strip()
-        st.session_state["estimate_builder_client_id"] = (
-            preferred_client_id if preferred_client_id in estimate_builder_client_options else estimate_builder_client_options[0]
-        )
-    estimate_builder_client_id = st.selectbox(
-        "Client",
-        options=estimate_builder_client_options,
-        key="estimate_builder_client_id",
-        format_func=lambda client_id: client_label(estimate_builder_client_lookup[client_id]),
-    )
-    estimate_builder_client = estimate_builder_client_lookup[estimate_builder_client_id]
 
     estimate_builder_products = estimate_builder_company.get("products", [])
     if not estimate_builder_products:
@@ -1549,7 +1794,7 @@ with estimate_tab:
     if estimate_builder_products_key not in st.session_state:
         if (
             loaded_snapshot_active
-            and normalize_company_name(estimate_builder_company_name) == normalize_company_name(loaded_estimate.get("company_name", ""))
+            and str(loaded_estimate.get("company_id", "")).strip() == estimate_builder_company_id
             and estimate_builder_client_id == str(loaded_estimate.get("client_id", "")).strip()
         ):
             st.session_state[estimate_builder_products_key] = [
@@ -1574,7 +1819,7 @@ with estimate_tab:
 
     loaded_estimate_matches_current_selection = (
         loaded_snapshot_active
-        and normalize_company_name(estimate_builder_company_name) == normalize_company_name(loaded_estimate.get("company_name", ""))
+        and str(loaded_estimate.get("company_id", "")).strip() == estimate_builder_company_id
         and estimate_builder_client_id == str(loaded_estimate.get("client_id", "")).strip()
     )
     estimate_client_source = loaded_estimate if loaded_estimate_matches_current_selection else estimate_builder_client

@@ -11,6 +11,7 @@
       "default_gratuity_percent": 0.0,
       "payment_terms": "",
       "estimate_notes": "Thanks for choosing us! Silverspoon Catering will provide all items for the buffet including chafers, linens, utensils, trinkets, and decorations!",
+      "company_id": "company-1",
       "products": [
         {
           "product_id": "None",
@@ -155,6 +156,22 @@
           "kitchen_staff_hours": 8,
           "deposit_amount": 0.0,
           "utensils_buffer": 20
+        },
+        {
+          "client_id": "client-4d4d8222b7",
+          "client_name": "New Client",
+          "client_email": "",
+          "client_phone": "",
+          "event_type": "Private Event",
+          "event_date": "",
+          "venue": "",
+          "guest_count": 50,
+          "servers_count": 0,
+          "servers_hours": 0,
+          "kitchen_staff_count": 0,
+          "kitchen_staff_hours": 0,
+          "deposit_amount": 0.0,
+          "utensils_buffer": 0
         }
       ]
     }
