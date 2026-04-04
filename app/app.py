@@ -1447,7 +1447,7 @@ with estimate_tab:
     )
     if selected_estimate_option != st.session_state.get("estimate_builder_active_selection", NEW_ESTIMATE_OPTION):
         if selected_estimate_option == NEW_ESTIMATE_OPTION:
-            reset_estimate_builder_state()
+            reset_estimate_builder_state(next_estimate_number())
         else:
             loaded_selection = load_estimate_file(selected_estimate_option)
             if loaded_selection:
