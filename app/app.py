@@ -573,10 +573,22 @@ def add_company_client(store: dict[str, Any], company_name: str) -> tuple[dict[s
     company = find_company(store["companies"], company_name)
     assert company is not None
 
-    new_client = build_client_record(
-        source={"client_name": "New Client"},
-        client_id=next_client_id(company.get("clients", [])),
-    )
+    new_client = build_client_record(client_id=next_client_id(company.get("clients", [])))
+    updated_clients = company.get("clients", []) + [new_client]
+    updated_company = build_company_record(name=company["business_name"], source={**company, "clients": updated_clients})
+    updated_store, _ = save_company(store, updated_company, company_name)
+    return updated_store, updated_company, new_client
+
+
+def create_company_client(
+    store: dict[str, Any],
+    company_name: str,
+    client_data: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    company = find_company(store["companies"], company_name)
+    assert company is not None
+
+    new_client = build_client_record(source=client_data, client_id=next_client_id(company.get("clients", [])))
     updated_clients = company.get("clients", []) + [new_client]
     updated_company = build_company_record(name=company["business_name"], source={**company, "clients": updated_clients})
     updated_store, _ = save_company(store, updated_company, company_name)
@@ -1334,6 +1346,60 @@ def confirm_delete_client_dialog(company_name: str, clients: list[dict[str, Any]
             st.rerun()
 
 
+@st.dialog("Add Client")
+def add_client_dialog(company_name: str, store: dict[str, Any]) -> None:
+    with st.form(key=f"add_client_form__{company_name}"):
+        client_name = st.text_input("Client name")
+        client_email = st.text_input("Client email")
+        client_phone = st.text_input("Client phone")
+        event_type = st.text_input("Event type", value="Private Event")
+        event_date = st.text_input("Event date")
+        venue = st.text_input("Venue")
+        guest_count = st.number_input("Guest count", min_value=1, step=1, value=50, format="%d")
+        servers_count = st.number_input("Servers (#)", min_value=0, step=1, value=0, format="%d")
+        servers_hours = st.number_input("Servers (hrs)", min_value=0, step=1, value=0, format="%d")
+        kitchen_staff_count = st.number_input("Kitchen Staff (#)", min_value=0, step=1, value=0, format="%d")
+        kitchen_staff_hours = st.number_input("Kitchen Staff (hrs)", min_value=0, step=1, value=0, format="%d")
+        deposit_amount = st.number_input("Deposit ($)", min_value=0.0, step=25.0, value=0.0, format="%.2f")
+        utensils_buffer = st.number_input("Utensils Buffer", min_value=0, step=1, value=0, format="%d")
+        c1, c2 = st.columns(2)
+        with c1:
+            cancel_clicked = st.form_submit_button("Cancel", use_container_width=True)
+        with c2:
+            create_clicked = st.form_submit_button("Create Client", use_container_width=True, type="primary")
+
+    if cancel_clicked:
+        st.rerun()
+
+    if create_clicked:
+        cleaned_name = client_name.strip()
+        if not cleaned_name:
+            st.error("Client name is required.")
+            return
+        _, updated_company, _ = create_company_client(
+            store,
+            company_name,
+            {
+                "client_name": cleaned_name,
+                "client_email": client_email,
+                "client_phone": client_phone,
+                "event_type": event_type,
+                "event_date": event_date,
+                "venue": venue,
+                "guest_count": guest_count,
+                "servers_count": servers_count,
+                "servers_hours": servers_hours,
+                "kitchen_staff_count": kitchen_staff_count,
+                "kitchen_staff_hours": kitchen_staff_hours,
+                "deposit_amount": deposit_amount,
+                "utensils_buffer": utensils_buffer,
+            },
+        )
+        st.session_state["company_editor_context"] = f"existing:{updated_company['business_name']}"
+        st.session_state.pop("estimate_form_context", None)
+        st.rerun()
+
+
 def queue_client_selection(client_id: str) -> None:
     st.session_state["clients_pending_selected_client_id"] = client_id
 
@@ -1671,10 +1737,7 @@ with clients_tab:
         )
 
     if add_client_clicked:
-        _, updated_company, new_client = add_company_client(company_store, clients_company_name)
-        st.session_state["company_editor_context"] = f"existing:{updated_company['business_name']}"
-        st.session_state.pop("estimate_form_context", None)
-        st.rerun()
+        add_client_dialog(clients_company_name, company_store)
 
     if delete_client_clicked and clients_list:
         confirm_delete_client_dialog(
