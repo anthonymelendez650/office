@@ -397,6 +397,21 @@ def save_company(
     return new_store, company_data["business_name"]
 
 
+def delete_company(store: dict[str, Any], company_name: str) -> dict[str, Any]:
+    remaining_companies = [
+        company
+        for company in store["companies"]
+        if normalize_company_name(company.get("business_name", "")) != normalize_company_name(company_name)
+    ]
+    selected_company = remaining_companies[0]["business_name"] if remaining_companies else ""
+    new_store = {
+        "selected_company": selected_company,
+        "companies": remaining_companies,
+    }
+    save_company_store(new_store)
+    return new_store
+
+
 def find_product(company: dict[str, Any], product_id: str) -> dict[str, Any] | None:
     for product in company.get("products", []):
         if str(product.get("product_id", "")) == str(product_id):
@@ -1007,14 +1022,28 @@ def reset_estimate_state() -> None:
 
 
 st.set_page_config(page_title="Catering Estimate Maker", page_icon="🧾", layout="wide")
+st.markdown(
+    """
+    <style>
+    div[data-testid="stButton"] > button[kind="primary"] {
+        background-color: #c62828;
+        border-color: #c62828;
+        color: white;
+    }
+    div[data-testid="stButton"] > button[kind="primary"]:hover {
+        background-color: #b71c1c;
+        border-color: #b71c1c;
+        color: white;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 company_store = load_company_store()
 companies = company_store["companies"]
 company_names = list_company_names(companies)
 loaded_estimate = st.session_state.get("loaded_estimate", {})
-
-st.title("🧾 Catering Estimate Maker")
-st.caption("Internal estimate builder with reusable companies, JSON persistence, and same-page PDF download.")
 
 company_tab, products_tab, clients_tab, estimate_tab = st.tabs(
     ["Company", "Products", "Clients", "Estimate"]
@@ -1031,6 +1060,9 @@ with company_tab:
     creating_new_company = company_choice == NEW_COMPANY_OPTION
     selected_company = None if creating_new_company else find_company(companies, company_choice)
     sync_company_editor(selected_company, creating_new_company)
+    current_delete_target = "" if creating_new_company or not selected_company else selected_company["business_name"]
+    if st.session_state.get("company_delete_confirm_target", "") != current_delete_target:
+        st.session_state["company_delete_confirm_target"] = ""
 
     st.info("Companies are unique by business name. Create a new company or edit an existing one here.")
 
@@ -1058,8 +1090,24 @@ with company_tab:
     payment_terms = st.text_area("Default payment terms", key="company_payment_terms", height=110)
     estimate_notes = st.text_area("Default note", key="company_estimate_notes", height=110)
 
+    action_columns = st.columns([1, 4, 1, 1])
     save_label = "Create company" if creating_new_company else "Save company"
-    if st.button(save_label, use_container_width=False):
+    with action_columns[0]:
+        save_clicked = st.button(save_label, use_container_width=True)
+    with action_columns[2]:
+        request_delete_clicked = (
+            st.button("Delete company", use_container_width=True, type="secondary")
+            if not creating_new_company
+            else False
+        )
+    with action_columns[3]:
+        confirm_delete_clicked = (
+            st.button("Confirm delete", use_container_width=True, type="primary")
+            if st.session_state.get("company_delete_confirm_target", "") == current_delete_target and current_delete_target
+            else False
+        )
+
+    if save_clicked:
         cleaned_name = business_name.strip()
         if not cleaned_name:
             st.error("Business name is required.")
@@ -1086,10 +1134,25 @@ with company_tab:
             st.success(f"Saved company: {saved_name}")
             st.rerun()
 
-    if company_names:
-        st.divider()
-        st.caption("Existing companies")
-        st.write(", ".join(company_names))
+    if request_delete_clicked and selected_company:
+        st.session_state["company_delete_confirm_target"] = selected_company["business_name"]
+        st.rerun()
+
+    if st.session_state.get("company_delete_confirm_target", "") == current_delete_target and current_delete_target:
+        notice_columns = st.columns([5, 1])
+        with notice_columns[0]:
+            st.warning(f"Confirm deletion of {current_delete_target}. This cannot be undone.")
+        with notice_columns[1]:
+            if st.button("Cancel", use_container_width=True):
+                st.session_state["company_delete_confirm_target"] = ""
+                st.rerun()
+
+    if confirm_delete_clicked and selected_company:
+        delete_company(company_store, selected_company["business_name"])
+        st.session_state["company_delete_confirm_target"] = ""
+        st.session_state["company_editor_context"] = "new"
+        st.success(f"Deleted company: {selected_company['business_name']}")
+        st.rerun()
 
 with products_tab:
     st.subheader("Products")
