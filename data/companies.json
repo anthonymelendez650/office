@@ -138,6 +138,69 @@
           "Description": "Water Glasses",
           "Notes": "Per Guest",
           "Unit Price": 1.0
+        },
+        {
+          "product_id": "product-18",
+          "Category": "Hot Entree",
+          "Description": "Pan Seared Atlantic Salmon w/ Meyer Lemon Beurre Blanc Sauce",
+          "Notes": "Per Guest",
+          "Unit Price": 27.0
+        },
+        {
+          "product_id": "product-19",
+          "Category": "Hot Entree",
+          "Description": "Baked Honey Mustard Chicken Breast",
+          "Notes": "None",
+          "Unit Price": 25.0
+        },
+        {
+          "product_id": "product-20",
+          "Category": "Service",
+          "Description": "Service Fee",
+          "Notes": "Per Guest",
+          "Unit Price": 0.0
+        },
+        {
+          "product_id": "product-21",
+          "Category": "Sides",
+          "Description": "Crispy Oven Roasted Garlic Potatoes",
+          "Notes": "None",
+          "Unit Price": 0.0
+        },
+        {
+          "product_id": "product-22",
+          "Category": "Sides",
+          "Description": "Garlic Potato Wedges",
+          "Notes": "None",
+          "Unit Price": 0.0
+        },
+        {
+          "product_id": "product-23",
+          "Category": "Sides",
+          "Description": "Roasted Fresh Glazed Summer Vegetables",
+          "Notes": "None",
+          "Unit Price": 0.0
+        },
+        {
+          "product_id": "product-24",
+          "Category": "Salads",
+          "Description": "Fresh Salad/Spring Mix Cranberries, Pecans, Gorgonzola Cheese with Italian Dressing",
+          "Notes": "None",
+          "Unit Price": 0.0
+        },
+        {
+          "product_id": "product-25",
+          "Category": "Sides",
+          "Description": "Dinner Rolls",
+          "Notes": "None",
+          "Unit Price": 0.0
+        },
+        {
+          "product_id": "product-26",
+          "Category": "Hot Entree",
+          "Description": "Creamy Garlic Spinach Chicken Breast",
+          "Notes": "None",
+          "Unit Price": 0.0
         }
       ],
       "clients": [
@@ -156,6 +219,22 @@
           "kitchen_staff_hours": 8,
           "deposit_amount": 0.0,
           "utensils_buffer": 20
+        },
+        {
+          "client_id": "client-bfe31d1f30",
+          "client_name": "Nancy Young",
+          "client_email": "",
+          "client_phone": "",
+          "event_type": "Garden Brunch",
+          "event_date": "05-02-2026",
+          "venue": "",
+          "guest_count": 150,
+          "servers_count": 0,
+          "servers_hours": 0,
+          "kitchen_staff_count": 3,
+          "kitchen_staff_hours": 8,
+          "deposit_amount": 0.0,
+          "utensils_buffer": 0
         }
       ]
     }

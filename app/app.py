@@ -672,9 +672,10 @@ def money(value: Decimal | float | int | str) -> str:
 
 def to_decimal(value: Any) -> Decimal:
     try:
-        return Decimal(str(value).replace(",", "")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+        amount = Decimal(str(value).replace(",", "")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
     except (InvalidOperation, AttributeError):
         return Decimal("0.00")
+    return amount if amount.is_finite() else Decimal("0.00")
 
 
 def sanitize_filename(value: str) -> str:
