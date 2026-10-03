@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Sign in &middot; Office</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234f46e5'/%3E%3Ctext x='16' y='22' font-family='system-ui,sans-serif' font-size='18' font-weight='700' fill='%23fff' text-anchor='middle'%3EO%3C/text%3E%3C/svg%3E">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #0b0d13;
+    background-image: radial-gradient(ellipse 80% 60% at 50% -10%, #1e1b4b 0%, transparent 60%);
+    color: #e5e7eb;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 360px;
+    background: #141824;
+    border: 1px solid #262c3e;
+    border-radius: 14px;
+    padding: 32px 28px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .mark {
+    width: 40px; height: 40px;
+    border-radius: 9px;
+    background: #4f46e5;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 20px; color: #fff;
+    margin-bottom: 18px;
+  }
+  h1 { font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
+  .sub { font-size: 13px; color: #8b93a7; margin-top: 4px; margin-bottom: 22px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #9aa3b8; margin-bottom: 14px; }
+  input {
+    width: 100%;
+    margin-top: 6px;
+    padding: 10px 12px;
+    font-size: 14px;
+    color: #e5e7eb;
+    background: #0e1119;
+    border: 1px solid #2c3347;
+    border-radius: 8px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  input:focus { border-color: #4f46e5; }
+  button {
+    width: 100%;
+    margin-top: 6px;
+    padding: 11px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    background: #4f46e5;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  button:hover { background: #4338ca; }
+  button:disabled { opacity: .55; cursor: default; }
+  button.ghost {
+    background: transparent;
+    border: 1px solid #2c3347;
+    color: #9aa3b8;
+    margin-top: 10px;
+  }
+  button.ghost:hover { background: #1a1f2e; }
+  .err {
+    margin-top: 14px;
+    padding: 9px 12px;
+    font-size: 13px;
+    color: #fca5a5;
+    background: #2a1520;
+    border: 1px solid #4c1d2e;
+    border-radius: 8px;
+  }
+  .whoami { font-size: 14px; color: #9aa3b8; margin-bottom: 18px; }
+  .whoami strong { color: #e5e7eb; }
+  .foot { margin-top: 20px; font-size: 11px; color: #565e72; text-align: center; }
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="mark">O</div>
+
+  <section id="signin-view">
+    <h1>Sign in</h1>
+    <p class="sub">Office &mdash; estimates, catalog &amp; clients</p>
+    <form id="signin-form" autocomplete="on">
+      <label>Username
+        <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+      </label>
+      <label>Password
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button id="submit-btn" type="submit">Sign in</button>
+      <div id="error" class="err" hidden></div>
+    </form>
+  </section>
+
+  <section id="session-view" hidden>
+    <h1>Signed in</h1>
+    <p class="sub">You already have an active session.</p>
+    <p class="whoami">Signed in as <strong id="session-user"></strong></p>
+    <button id="continue-btn" type="button">Continue to Office</button>
+    <button id="signout-btn" class="ghost" type="button">Sign out</button>
+  </section>
+
+  <p class="foot">Authorized users only. All access is logged.</p>
+</main>
+
+<script>
+(function () {
+  var form = document.getElementById("signin-form");
+  var btn = document.getElementById("submit-btn");
+  var err = document.getElementById("error");
+  var signinView = document.getElementById("signin-view");
+  var sessionView = document.getElementById("session-view");
+
+  function showError(msg) {
+    err.textContent = msg;
+    err.hidden = false;
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    err.hidden = true;
+    btn.disabled = true;
+    btn.textContent = "Signing in\u2026";
+    fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: document.getElementById("username").value.trim(),
+        password: document.getElementById("password").value
+      })
+    }).then(function (res) {
+      if (res.ok) {
+        window.location.href = "/";
+        return;
+      }
+      if (res.status === 401) return showError("Incorrect username or password.");
+      if (res.status === 429 || res.status === 503) return showError("Too many attempts. Wait a moment and try again.");
+      showError("Sign-in failed (" + res.status + "). Try again.");
+    }).catch(function () {
+      showError("Can't reach the server. Check your connection and try again.");
+    }).finally(function () {
+      btn.disabled = false;
+      btn.textContent = "Sign in";
+    });
+  });
+
+  document.getElementById("continue-btn").addEventListener("click", function () {
+    window.location.href = "/";
+  });
+
+  document.getElementById("signout-btn").addEventListener("click", function () {
+    fetch("/api/auth/logout", { method: "POST" }).finally(function () {
+      sessionView.hidden = true;
+      signinView.hidden = false;
+      document.getElementById("password").value = "";
+      document.getElementById("username").focus();
+    });
+  });
+
+  fetch("/api/auth/session").then(function (res) {
+    if (!res.ok) return;
+    return res.json().then(function (data) {
+      if (!data || !data.user) return;
+      document.getElementById("session-user").textContent = data.user;
+      signinView.hidden = true;
+      sessionView.hidden = false;
+    });
+  }).catch(function () {});
+})();
+</script>
+</body>
+</html>

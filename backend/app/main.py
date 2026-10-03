@@ -257,6 +257,37 @@ def create_app(repository: SqliteRepository | None = None) -> FastAPI:
             raise HTTPException(503, "Database is not ready")
         return status
 
+    @application.post("/api/auth/login")
+    def login(payload: dict[str, Any], response: Response) -> dict[str, Any]:
+        username = str(payload.get("username", "")).strip()
+        password = str(payload.get("password", ""))
+        if not auth._verify_password(username, password):
+            raise HTTPException(401, "Invalid username or password",
+                                 headers={"WWW-Authenticate": "Bearer"})
+        response.set_cookie(
+            key="office_session",
+            value=auth._issue_session(username),
+            max_age=86400,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            path="/",
+        )
+        return {"user": username, "scopes": sorted(ALL_SCOPES)}
+
+    @application.post("/api/auth/logout")
+    def logout(response: Response) -> dict[str, Any]:
+        response.delete_cookie("office_session", path="/")
+        return {"ok": True}
+
+    @application.get("/api/auth/session")
+    def session(request: Request) -> dict[str, Any]:
+        raw = request.cookies.get("office_session", "")
+        user = auth._session_user(raw) if raw else ""
+        if user:
+            return {"user": user, "scopes": sorted(ALL_SCOPES)}
+        raise HTTPException(401, "Not signed in")
+
     @application.get("/api/auth/mcp", status_code=204)
     def authorize_mcp(_context: AuthContext = Depends(mcp_connect)) -> Response:
         return Response(status_code=204)
