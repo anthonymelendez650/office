@@ -1,0 +1,2 @@
+"""Silverspoon Office MCP adapter."""
+

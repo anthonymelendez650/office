@@ -1,0 +1,14 @@
+[Unit]
+Description=Office API readiness check
+After=office-backend.service office-mcp.service
+
+[Service]
+Type=oneshot
+User=anthonym650
+Group=anthonym650
+ExecStart=/usr/bin/curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8000/api/ready
+ExecStart=/usr/bin/curl --silent --show-error --max-time 10 --output /dev/null http://127.0.0.1:8010/mcp
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict

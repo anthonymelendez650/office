@@ -1,0 +1,33 @@
+[Unit]
+Description=Office backend (FastAPI + SQLite)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+ConditionPathExists=/opt/webapps/sites/office/backend/data/office.sqlite3
+
+[Service]
+Type=simple
+User=anthonym650
+Group=anthonym650
+WorkingDirectory=/opt/webapps/sites/office
+Environment="PATH=/opt/webapps/sites/office/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="OFFICE_DATABASE_PATH=/opt/webapps/sites/office/backend/data/office.sqlite3"
+Environment="OFFICE_AUTH_REQUIRED=true"
+Environment="OFFICE_RATE_LIMIT_PER_MINUTE=240"
+Environment="PYTHONDONTWRITEBYTECODE=1"
+EnvironmentFile=-/etc/office/office.env
+ExecStart=/opt/webapps/sites/office/backend/.venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGINT
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/opt/webapps/sites/office/backend/data
+
+[Install]
+WantedBy=multi-user.target

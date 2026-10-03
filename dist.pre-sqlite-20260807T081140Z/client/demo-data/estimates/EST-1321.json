@@ -1,0 +1,359 @@
+{
+  "estimate_number": "EST-1321",
+  "created_at": "2026-04-22T04:47:07",
+  "updated_at": "2026-04-22T05:28:06",
+  "company_id": "company-1",
+  "company_name": "Silverspoon Catering",
+  "business": {
+    "business_name": "Silverspoon Catering",
+    "business_email": "silverspoonpe@gmail.com",
+    "business_phone": "(650) 863-7435",
+    "business_address": "1664 Maywood Ave, Manteca CA 95336",
+    "default_tax_percent": 0.0,
+    "default_service_charge_percent": 0.0,
+    "default_gratuity_percent": 0.0,
+    "payment_terms": "",
+    "estimate_notes": "Thanks for choosing us! Silverspoon Catering will provide all items for the buffet including chafers, linens, utensils, trinkets, and decorations!",
+    "company_id": "company-1",
+    "products": [
+      {
+        "product_id": "None",
+        "Category": "Hot Entree",
+        "Description": "Stir-Fry Peruvian Lomo Saltado",
+        "Notes": "Per Guest",
+        "Unit Price": 18.0
+      },
+      {
+        "product_id": "product-1",
+        "Category": "Sides",
+        "Description": "Papa A La Huancaina",
+        "Notes": "Per Guest",
+        "Unit Price": 6.0
+      },
+      {
+        "product_id": "product-2",
+        "Category": "Fruits",
+        "Description": "Papaya, Mango",
+        "Notes": "Per Guest",
+        "Unit Price": 3.0
+      },
+      {
+        "product_id": "product-3",
+        "Category": "Appetizers",
+        "Description": "Beef Empanadas w/ Chimichurri",
+        "Notes": "Per Guest",
+        "Unit Price": 5.0
+      },
+      {
+        "product_id": "product-4",
+        "Category": "Salads",
+        "Description": "Asian Fusion Salad Mixed Greens",
+        "Notes": "Per Guest",
+        "Unit Price": 4.0
+      },
+      {
+        "product_id": "product-5",
+        "Category": "Sides",
+        "Description": "French Fries",
+        "Notes": "Per Guest",
+        "Unit Price": 3.0
+      },
+      {
+        "product_id": "product-6",
+        "Category": "Sides",
+        "Description": "Steamed Rice",
+        "Notes": "Per Guest",
+        "Unit Price": 2.0
+      },
+      {
+        "product_id": "product-7",
+        "Category": "Service",
+        "Description": "Service Fee",
+        "Notes": "Flat Fee",
+        "Unit Price": 200.0
+      },
+      {
+        "product_id": "product-8",
+        "Category": "Staff",
+        "Description": "Kitchen Staff",
+        "Notes": "Hours",
+        "Unit Price": 25.0
+      },
+      {
+        "product_id": "product-9",
+        "Category": "Staff",
+        "Description": "Servers",
+        "Notes": "Hours",
+        "Unit Price": 30.0
+      },
+      {
+        "product_id": "product-10",
+        "Category": "Staff",
+        "Description": "Head Chef",
+        "Notes": "Flat Fee",
+        "Unit Price": 360.0
+      },
+      {
+        "product_id": "product-11",
+        "Category": "Delivery",
+        "Description": "Delivery Fee",
+        "Notes": "Flat Fee",
+        "Unit Price": 150.0
+      },
+      {
+        "product_id": "product-12",
+        "Category": "Utensils",
+        "Description": "Napkins",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-13",
+        "Category": "Utensils",
+        "Description": "Dinner Plates",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-14",
+        "Category": "Utensils",
+        "Description": "Knifes",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-15",
+        "Category": "Utensils",
+        "Description": "Forks",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-16",
+        "Category": "Utensils",
+        "Description": "Wine Glasses",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-17",
+        "Category": "Utensils",
+        "Description": "Water Glasses",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-18",
+        "Category": "Hot Entree",
+        "Description": "Pan Seared Atlantic Salmon w/ Meyer Lemon Beurre Blanc Sauce",
+        "Notes": "Per Guest",
+        "Unit Price": 27.0
+      },
+      {
+        "product_id": "product-19",
+        "Category": "Hot Entree",
+        "Description": "Baked Honey Mustard Chicken Breast",
+        "Notes": "Per Guest",
+        "Unit Price": 25.0
+      },
+      {
+        "product_id": "product-20",
+        "Category": "Service",
+        "Description": "Service Fee (High Guest Count)",
+        "Notes": "Flat Fee",
+        "Unit Price": 150.0
+      },
+      {
+        "product_id": "product-21",
+        "Category": "Sides",
+        "Description": "Crispy Oven Roasted Garlic Potatoes",
+        "Notes": "None",
+        "Unit Price": 0.0
+      },
+      {
+        "product_id": "product-22",
+        "Category": "Sides",
+        "Description": "Garlic Potato Wedges",
+        "Notes": "None",
+        "Unit Price": 0.0
+      },
+      {
+        "product_id": "product-23",
+        "Category": "Sides",
+        "Description": "Roasted Fresh Glazed Summer Vegetables",
+        "Notes": "None",
+        "Unit Price": 0.0
+      },
+      {
+        "product_id": "product-24",
+        "Category": "Salads",
+        "Description": "Fresh Salad/Spring Mix Cranberries, Pecans, Gorgonzola Cheese with Italian Dressing",
+        "Notes": "None",
+        "Unit Price": 0.0
+      },
+      {
+        "product_id": "product-25",
+        "Category": "Sides",
+        "Description": "Dinner Rolls",
+        "Notes": "None",
+        "Unit Price": 0.0
+      },
+      {
+        "product_id": "product-26",
+        "Category": "Hot Entree",
+        "Description": "Creamy Garlic Spinach Chicken Breast",
+        "Notes": "Per Guest",
+        "Unit Price": 25.0
+      }
+    ],
+    "clients": [
+      {
+        "client_id": "None",
+        "client_name": "Perla Aramburu",
+        "client_email": "",
+        "client_phone": "(650) 544-5934",
+        "event_type": "Wedding",
+        "event_date": "11-22-2026",
+        "venue": "Fremont, CA",
+        "guest_count": 120,
+        "servers_count": 5,
+        "servers_hours": 6,
+        "kitchen_staff_count": 3,
+        "kitchen_staff_hours": 8,
+        "deposit_amount": 0.0,
+        "utensils_buffer": 20
+      },
+      {
+        "client_id": "client-bfe31d1f30",
+        "client_name": "Nancy Young",
+        "client_email": "",
+        "client_phone": "",
+        "event_type": "Garden Brunch",
+        "event_date": "05-02-2026",
+        "venue": "",
+        "guest_count": 150,
+        "servers_count": 0,
+        "servers_hours": 0,
+        "kitchen_staff_count": 3,
+        "kitchen_staff_hours": 8,
+        "deposit_amount": 0.0,
+        "utensils_buffer": 0
+      }
+    ]
+  },
+  "client_id": "client-bfe31d1f30",
+  "issue_date": "2026-04-22",
+  "client_name": "Nancy Young",
+  "client_email": "",
+  "client_phone": "",
+  "event_date": "05-02-2026",
+  "event_type": "Garden Brunch",
+  "venue": "",
+  "guest_count": 150,
+  "tax_percent": 0.0,
+  "service_charge_percent": 0.0,
+  "gratuity_percent": 0.0,
+  "notes": "",
+  "line_items": [
+    {
+      "product_id": "product-18",
+      "Category": "Hot Entree",
+      "Description": "Pan Seared Atlantic Salmon w/ Meyer Lemon Beurre Blanc Sauce",
+      "Notes": "Per Guest",
+      "Qty": 150.0,
+      "Unit Price": 27.0,
+      "Line Total": 4050.0
+    },
+    {
+      "product_id": "product-22",
+      "Category": "Sides",
+      "Description": "Garlic Potato Wedges",
+      "Notes": "None",
+      "Qty": 150.0,
+      "Unit Price": 0.0,
+      "Line Total": 0.0
+    },
+    {
+      "product_id": "product-23",
+      "Category": "Sides",
+      "Description": "Roasted Fresh Glazed Summer Vegetables",
+      "Notes": "None",
+      "Qty": 150.0,
+      "Unit Price": 0.0,
+      "Line Total": 0.0
+    },
+    {
+      "product_id": "product-24",
+      "Category": "Salads",
+      "Description": "Fresh Salad/Spring Mix Cranberries, Pecans, Gorgonzola Cheese with Italian Dressing",
+      "Notes": "None",
+      "Qty": 150.0,
+      "Unit Price": 0.0,
+      "Line Total": 0.0
+    },
+    {
+      "product_id": "product-25",
+      "Category": "Sides",
+      "Description": "Dinner Rolls",
+      "Notes": "None",
+      "Qty": 150.0,
+      "Unit Price": 0.0,
+      "Line Total": 0.0
+    },
+    {
+      "product_id": "product-8",
+      "Category": "Staff",
+      "Description": "Kitchen Staff",
+      "Notes": "Hours",
+      "Qty": 24.0,
+      "Unit Price": 25.0,
+      "Line Total": 600.0
+    },
+    {
+      "product_id": "product-10",
+      "Category": "Staff",
+      "Description": "Head Chef",
+      "Notes": "Flat Fee",
+      "Qty": 1.0,
+      "Unit Price": 360.0,
+      "Line Total": 360.0
+    },
+    {
+      "product_id": "product-20",
+      "Category": "Service",
+      "Description": "Service Fee (High Guest Count)",
+      "Notes": "Flat Fee",
+      "Qty": 1.0,
+      "Unit Price": 150.0,
+      "Line Total": 150.0
+    },
+    {
+      "product_id": "product-11",
+      "Category": "Delivery",
+      "Description": "Delivery Fee",
+      "Notes": "Flat Fee",
+      "Qty": 1.0,
+      "Unit Price": 150.0,
+      "Line Total": 150.0
+    }
+  ],
+  "subtotal": 4050.0,
+  "service_charge": 150.0,
+  "gratuity": 960.0,
+  "delivery_charge": 150.0,
+  "tax": 0.0,
+  "total": 5310.0,
+  "deposit": 0.0,
+  "balance_due": 5310.0,
+  "selected_product_ids": [
+    "product-18",
+    "product-22",
+    "product-23",
+    "product-24",
+    "product-25",
+    "product-8",
+    "product-10",
+    "product-20",
+    "product-11"
+  ]
+}

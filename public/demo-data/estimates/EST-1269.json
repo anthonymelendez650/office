@@ -1,0 +1,370 @@
+{
+  "estimate_number": "EST-1269",
+  "created_at": "2026-04-04T19:09:30",
+  "updated_at": "2026-04-04T21:17:35",
+  "company_id": "company-1",
+  "company_name": "Silverspoon Catering",
+  "business": {
+    "business_name": "Silverspoon Catering",
+    "business_email": "silverspoonpe@gmail.com",
+    "business_phone": "(650) 863-7435",
+    "business_address": "1664 Maywood Ave, Manteca CA 95336",
+    "default_tax_percent": 0.0,
+    "default_service_charge_percent": 0.0,
+    "default_gratuity_percent": 0.0,
+    "payment_terms": "",
+    "estimate_notes": "Thanks for choosing us! Silverspoon Catering will provide all items for the buffet including chafers, linens, utensils, trinkets, and decorations!",
+    "company_id": "company-1",
+    "products": [
+      {
+        "product_id": "None",
+        "Category": "Hot Entree",
+        "Description": "Stir-Fry Peruvian Lomo Saltado",
+        "Notes": "Per Guest",
+        "Unit Price": 18.0
+      },
+      {
+        "product_id": "product-1",
+        "Category": "Sides",
+        "Description": "Papa A La Huancaina",
+        "Notes": "Per Guest",
+        "Unit Price": 6.0
+      },
+      {
+        "product_id": "product-2",
+        "Category": "Fruits",
+        "Description": "Papaya, Mango",
+        "Notes": "Per Guest",
+        "Unit Price": 3.0
+      },
+      {
+        "product_id": "product-3",
+        "Category": "Appetizers",
+        "Description": "Beef Empanadas w/ Chimichurri",
+        "Notes": "Per Guest",
+        "Unit Price": 5.0
+      },
+      {
+        "product_id": "product-4",
+        "Category": "Salads",
+        "Description": "Asian Fusion Salad Mixed Greens",
+        "Notes": "Per Guest",
+        "Unit Price": 4.0
+      },
+      {
+        "product_id": "product-5",
+        "Category": "Sides",
+        "Description": "French Fries",
+        "Notes": "Per Guest",
+        "Unit Price": 3.0
+      },
+      {
+        "product_id": "product-6",
+        "Category": "Sides",
+        "Description": "Steamed Rice",
+        "Notes": "Per Guest",
+        "Unit Price": 2.0
+      },
+      {
+        "product_id": "product-7",
+        "Category": "Service",
+        "Description": "Service Fee",
+        "Notes": "Flat Fee",
+        "Unit Price": 200.0
+      },
+      {
+        "product_id": "product-8",
+        "Category": "Staff",
+        "Description": "Kitchen Staff",
+        "Notes": "Hours",
+        "Unit Price": 25.0
+      },
+      {
+        "product_id": "product-9",
+        "Category": "Staff",
+        "Description": "Servers",
+        "Notes": "Hours",
+        "Unit Price": 30.0
+      },
+      {
+        "product_id": "product-10",
+        "Category": "Staff",
+        "Description": "Head Chef",
+        "Notes": "Hours",
+        "Unit Price": 45.0
+      },
+      {
+        "product_id": "product-11",
+        "Category": "Delivery",
+        "Description": "Delivery Fee",
+        "Notes": "Flat Fee",
+        "Unit Price": 150.0
+      },
+      {
+        "product_id": "product-12",
+        "Category": "Utensils",
+        "Description": "Napkins",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-13",
+        "Category": "Utensils",
+        "Description": "Dinner Plates",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-14",
+        "Category": "Utensils",
+        "Description": "Knifes",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-15",
+        "Category": "Utensils",
+        "Description": "Forks",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-16",
+        "Category": "Utensils",
+        "Description": "Wine Glasses",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      },
+      {
+        "product_id": "product-17",
+        "Category": "Utensils",
+        "Description": "Water Glasses",
+        "Notes": "Per Guest",
+        "Unit Price": 1.0
+      }
+    ],
+    "clients": [
+      {
+        "client_id": "None",
+        "client_name": "Perla Aramburu",
+        "client_email": "",
+        "client_phone": "(650) 544-5934",
+        "event_type": "Wedding",
+        "event_date": "11-22-2026",
+        "venue": "Fremont, CA",
+        "guest_count": 120,
+        "servers_count": 5,
+        "servers_hours": 6,
+        "kitchen_staff_count": 3,
+        "kitchen_staff_hours": 8,
+        "deposit_amount": 0.0,
+        "utensils_buffer": 20
+      }
+    ]
+  },
+  "client_id": "None",
+  "issue_date": "2026-04-04",
+  "client_name": "Perla Aramburu",
+  "client_email": "",
+  "client_phone": "(650) 544-5934",
+  "event_date": "11-22-2026",
+  "event_type": "Wedding",
+  "venue": "Fremont, CA",
+  "guest_count": 120,
+  "tax_percent": 0.0,
+  "service_charge_percent": 0.0,
+  "gratuity_percent": 0.0,
+  "notes": "",
+  "line_items": [
+    {
+      "product_id": "None",
+      "Category": "Hot Entree",
+      "Description": "Stir-Fry Peruvian Lomo Saltado",
+      "Notes": "Per Guest",
+      "Qty": 120.0,
+      "Unit Price": 18.0,
+      "Line Total": 2160.0
+    },
+    {
+      "product_id": "product-5",
+      "Category": "Sides",
+      "Description": "French Fries",
+      "Notes": "Per Guest",
+      "Qty": 120.0,
+      "Unit Price": 3.0,
+      "Line Total": 360.0
+    },
+    {
+      "product_id": "product-6",
+      "Category": "Sides",
+      "Description": "Steamed Rice",
+      "Notes": "Per Guest",
+      "Qty": 120.0,
+      "Unit Price": 2.0,
+      "Line Total": 240.0
+    },
+    {
+      "product_id": "product-1",
+      "Category": "Sides",
+      "Description": "Papa A La Huancaina",
+      "Notes": "Per Guest",
+      "Qty": 120.0,
+      "Unit Price": 6.0,
+      "Line Total": 720.0
+    },
+    {
+      "product_id": "product-4",
+      "Category": "Salads",
+      "Description": "Asian Fusion Salad Mixed Greens",
+      "Notes": "Per Guest",
+      "Qty": 120.0,
+      "Unit Price": 4.0,
+      "Line Total": 480.0
+    },
+    {
+      "product_id": "product-2",
+      "Category": "Fruits",
+      "Description": "Papaya, Mango",
+      "Notes": "Per Guest",
+      "Qty": 120.0,
+      "Unit Price": 3.0,
+      "Line Total": 360.0
+    },
+    {
+      "product_id": "product-3",
+      "Category": "Appetizers",
+      "Description": "Beef Empanadas w/ Chimichurri",
+      "Notes": "Per Guest",
+      "Qty": 120.0,
+      "Unit Price": 5.0,
+      "Line Total": 600.0
+    },
+    {
+      "product_id": "product-12",
+      "Category": "Utensils",
+      "Description": "Napkins",
+      "Notes": "Per Guest",
+      "Qty": 140.0,
+      "Unit Price": 1.0,
+      "Line Total": 140.0
+    },
+    {
+      "product_id": "product-13",
+      "Category": "Utensils",
+      "Description": "Dinner Plates",
+      "Notes": "Per Guest",
+      "Qty": 140.0,
+      "Unit Price": 1.0,
+      "Line Total": 140.0
+    },
+    {
+      "product_id": "product-14",
+      "Category": "Utensils",
+      "Description": "Knifes",
+      "Notes": "Per Guest",
+      "Qty": 140.0,
+      "Unit Price": 1.0,
+      "Line Total": 140.0
+    },
+    {
+      "product_id": "product-15",
+      "Category": "Utensils",
+      "Description": "Forks",
+      "Notes": "Per Guest",
+      "Qty": 140.0,
+      "Unit Price": 1.0,
+      "Line Total": 140.0
+    },
+    {
+      "product_id": "product-16",
+      "Category": "Utensils",
+      "Description": "Wine Glasses",
+      "Notes": "Per Guest",
+      "Qty": 140.0,
+      "Unit Price": 1.0,
+      "Line Total": 140.0
+    },
+    {
+      "product_id": "product-17",
+      "Category": "Utensils",
+      "Description": "Water Glasses",
+      "Notes": "Per Guest",
+      "Qty": 140.0,
+      "Unit Price": 1.0,
+      "Line Total": 140.0
+    },
+    {
+      "product_id": "product-8",
+      "Category": "Staff",
+      "Description": "Kitchen Staff",
+      "Notes": "Hours",
+      "Qty": 24.0,
+      "Unit Price": 25.0,
+      "Line Total": 600.0
+    },
+    {
+      "product_id": "product-9",
+      "Category": "Staff",
+      "Description": "Servers",
+      "Notes": "Hours",
+      "Qty": 30.0,
+      "Unit Price": 30.0,
+      "Line Total": 900.0
+    },
+    {
+      "product_id": "product-10",
+      "Category": "Staff",
+      "Description": "Head Chef",
+      "Notes": "WAIVED",
+      "Qty": 0.0,
+      "Unit Price": 45.0,
+      "Line Total": 0.0
+    },
+    {
+      "product_id": "product-7",
+      "Category": "Service",
+      "Description": "Service Fee",
+      "Notes": "Flat Fee",
+      "Qty": 1.0,
+      "Unit Price": 200.0,
+      "Line Total": 200.0
+    },
+    {
+      "product_id": "product-11",
+      "Category": "Delivery",
+      "Description": "Delivery Fee",
+      "Notes": "Flat Fee",
+      "Qty": 1.0,
+      "Unit Price": 150.0,
+      "Line Total": 150.0
+    }
+  ],
+  "subtotal": 5760.0,
+  "service_charge": 200.0,
+  "gratuity": 1500.0,
+  "delivery_charge": 150.0,
+  "tax": 0.0,
+  "total": 7610.0,
+  "deposit": 0.0,
+  "balance_due": 7610.0,
+  "selected_product_ids": [
+    "None",
+    "product-5",
+    "product-6",
+    "product-1",
+    "product-4",
+    "product-2",
+    "product-3",
+    "product-12",
+    "product-13",
+    "product-14",
+    "product-15",
+    "product-16",
+    "product-17",
+    "product-8",
+    "product-9",
+    "product-10",
+    "product-7",
+    "product-11"
+  ]
+}

@@ -1,113 +1,157 @@
-# Office
+# Silverspoon Catering Office
 
-Small internal Streamlit tool for building catering estimates, saving them as JSON, and downloading a PDF from the same page.
+React/Vinext and FastAPI application for companies, catalog products, customers, events, versioned estimates, and snapshot-safe PDFs. SQLite is the only active persistence layer. Historical JSON files are accepted only by the one-time migration command and are archived after verification.
 
-## Stack
+## Architecture
 
-- Streamlit UI
-- JSON file persistence (no SQLite)
-- ReportLab PDF generation
-- Nginx reverse proxy
-- systemd service for Streamlit on Nucweb
+- React 19, TypeScript, Vinext/Vite frontend
+- FastAPI and Pydantic API
+- SQLite in WAL mode with foreign keys, `BEGIN IMMEDIATE` writes, a 30-second busy timeout, and `synchronous=FULL`
+- Immutable entity and estimate revisions
+- Actor, request, reason, and idempotency-key audit records
+- Scoped bearer tokens for MCP/service clients
+- Trusted Nginx Basic-auth bridge for the browser UI
+- ReportLab PDF snapshots
 
-## Features
+The frontend uses the same-origin API by default. Seeded browser-only mode is available only when `NEXT_PUBLIC_DEMO_MODE=true` is explicitly set.
 
-- Client + event entry form
-- Editable line items
-- Auto-calculated subtotal, service charge, gratuity, tax, deposit, and balance due
-- Sidebar business settings
-- Save estimates as JSON files
-- Reload saved estimates
-- Download a PDF from the same page
+## SQLite data model
 
-## Project layout
+The database defaults to `backend/data/office.sqlite3` and contains normalized tables for:
 
-```text
-office/
-  app/
-    app.py
-  data/
-    estimates/
-    counter.json
-    settings.json
-  deploy/
-    nginx/
-      office.premiumdynasty.com.conf
-    systemd/
-      office.service
-  requirements.txt
-  README.md
-```
+- companies
+- products
+- customers
+- events
+- estimates and estimate revisions
+- normalized estimate line items
+- generic entity revisions
+- audit log entries
+- API tokens
+- idempotency records
+- browser import jobs
+- settings and migration metadata
 
-## Local run
+Deleting business records is not supported. Companies, products, customers, events, and estimates are archived and can be restored.
 
-```bash
-cd /opt/webapps/office
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-streamlit run app/app.py --server.address 127.0.0.1 --server.port 8507
-```
+## Authentication scopes
 
-Then open:
+| Scope | Access |
+| --- | --- |
+| `office.read` | Read ordinary records and summaries |
+| `office.internal.read` | Read internal notes |
+| `office.pii.read` | Read customer email, phone, and billing address |
+| `office.catalog.write` | Create and version products |
+| `office.crm.write` | Create and version companies, customers, and events |
+| `office.estimates.write` | Create and revise estimates |
+| `office.archive` | Archive and restore records |
+| `office.admin` | All scopes plus audit and import administration |
 
-```text
-http://127.0.0.1:8507
-```
+Every HTTP mutation requires an `Idempotency-Key` header. Updates require the version or estimate revision originally read; stale writes return `409`.
 
-## Deploy on Nucweb
+## Local development
 
-Suggested destination:
+Create and start the backend:
 
 ```bash
-sudo mkdir -p /opt/webapps
-sudo unzip office.zip -d /opt/webapps
-cd /opt/webapps/office
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+python3 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/requirements.txt
+OFFICE_AUTH_REQUIRED=false backend/.venv/bin/python -m uvicorn backend.app.main:app --reload --port 8000
 ```
 
-## systemd service
-
-Copy the included service file:
+Start the frontend:
 
 ```bash
-sudo cp deploy/systemd/office.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now office
-sudo systemctl status office
+cp .env.example .env.local
+npm ci
+npm run dev
 ```
 
-## Nginx reverse proxy
+For split local ports, set `NEXT_PUBLIC_API_URL=http://localhost:8000`. Leave it unset in production to use `/api` on the current origin.
 
-Copy the included Nginx config:
+Docker development is also available:
 
 ```bash
-sudo cp deploy/nginx/office.premiumdynasty.com.conf /etc/nginx/sites-available/office.premiumdynasty.com
-sudo ln -s /etc/nginx/sites-available/office.premiumdynasty.com /etc/nginx/sites-enabled/office.premiumdynasty.com
-sudo nginx -t
-sudo systemctl reload nginx
+docker compose up --build
 ```
 
-## SSL
+## JSON migration
 
-After DNS for `office.premiumdynasty.com` points to Nucweb, run Certbot:
+Make a directory backup first. Then run the migration while the application is stopped:
 
 ```bash
-sudo certbot --nginx -d office.premiumdynasty.com
+PYTHONPATH=. backend/.venv/bin/python backend/scripts/migrate_json_to_sqlite.py \
+  --data-dir backend/data \
+  --archive-json
 ```
 
-## Data storage notes
+The command copies every active JSON file into a staging directory, normalizes historical schemas there, builds a candidate SQLite database, compares imported row counts, runs `PRAGMA integrity_check`, checkpoints the WAL, atomically installs `office.sqlite3`, and only then moves the JSON sources under `backend/data/legacy-json-archive/<timestamp>/` with a checksum manifest. It is safe to rerun.
 
-- Business settings live in `data/settings.json`
-- Estimate numbering lives in `data/counter.json`
-- Each saved estimate is written to `data/estimates/`
+See `MIGRATION_RUNBOOK.md` for production cutover and rollback.
 
-This is intentionally simple and good for very light internal use.
-If you later outgrow it, the next upgrade would be:
+## Browser-local reconciliation
 
-- PostgreSQL or SQLite
-- user authentication
-- better document templates
-- emailed PDFs
+On the first API-mode load, the frontend looks for the old `silverspoon-office-demo-v2/v3/v4` localStorage records. It previews them through the admin import API and asks before committing:
+
+- `safe_merge` adds records only when server records are identical or absent.
+- `preserve_copy` remaps conflicting IDs and estimate numbers into a separate recovered workspace.
+
+The server state is never silently overwritten. The CLI equivalent is `backend/scripts/import_browser_demo.py`.
+
+## MCP server
+
+`mcp_server` is a thin adapter over the HTTP API and exposes tools for companies, products, customers/clients, events, revisions, estimates, archive/restore operations, and health/capability discovery. It has no direct database access.
+
+Install and run it over stdio:
+
+```bash
+python3 -m venv mcp_server/.venv
+mcp_server/.venv/bin/pip install -r mcp_server/requirements.txt
+```
+
+Create a standard MCP token after migration and run the secret-file launcher:
+
+```bash
+PYTHONPATH=. backend/.venv/bin/python backend/scripts/create_api_token.py \
+  --database backend/data/office.sqlite3 \
+  --name office-mcp \
+  --mcp \
+  --output-env mcp_server/.env
+./mcp_server/run.sh
+```
+
+The environment file is created with mode `0600`, the raw token is not printed, and only its SHA-256 hash is stored in SQLite. See `mcp_server/README.md` for client configuration.
+
+The root installer also starts `office-mcp.service` on loopback and exposes the authenticated
+Streamable HTTP transport at `https://office.premiumdynasty.com/mcp`. Its client-facing token uses
+only `office.mcp.connect`; it is separate from the internal MCP-to-API token above.
+
+## Operations
+
+Create a verified online backup:
+
+```bash
+PYTHONPATH=. backend/.venv/bin/python backend/scripts/backup_sqlite.py \
+  --database backend/data/office.sqlite3 \
+  --backup-dir /opt/webapps/backups/office \
+  --retain 30
+```
+
+Health endpoints:
+
+- `GET /api/health`: liveness plus database/schema identity
+- `GET /api/ready`: integrity, migration marker, schema version, and table counts
+
+The deployment includes daily backup and two-minute readiness systemd timers. `deploy/install-root.sh` installs the frontend, backend, MCP service, Nginx configuration, trusted proxy secret, permissions, and timers after the database has been migrated.
+
+## Tests
+
+```bash
+PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s backend/tests -v
+PYTHONPATH=mcp_server/.venv/lib/python3.12/site-packages:. backend/.venv/bin/python \
+  -m unittest discover -s mcp_server/tests -v
+npm run lint
+npm test
+```
+
+The backend suite covers legacy import, migration archiving, SQLite integrity, concurrent writers, optimistic conflicts, idempotent replay, auth scopes, redaction, audit history, browser reconciliation, estimate snapshots, and PDFs.

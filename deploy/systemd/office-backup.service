@@ -1,0 +1,16 @@
+[Unit]
+Description=Verified Office SQLite backup
+After=office-backend.service
+
+[Service]
+Type=oneshot
+User=anthonym650
+Group=anthonym650
+WorkingDirectory=/opt/webapps/sites/office
+ExecStart=/opt/webapps/sites/office/backend/.venv/bin/python backend/scripts/backup_sqlite.py --database backend/data/office.sqlite3 --backup-dir /opt/webapps/backups/office --retain 30
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/opt/webapps/sites/office/backend/data /opt/webapps/backups/office

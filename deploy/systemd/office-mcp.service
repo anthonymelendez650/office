@@ -1,27 +1,30 @@
 [Unit]
-Description=Office frontend (Vinext)
+Description=Silverspoon Office MCP (Streamable HTTP)
 After=network-online.target office-backend.service
 Wants=network-online.target office-backend.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
+ConditionPathExists=/opt/webapps/sites/office/mcp_server/.env
 
 [Service]
 Type=simple
 User=anthonym650
 Group=anthonym650
 WorkingDirectory=/opt/webapps/sites/office
-Environment="PATH=/opt/webapps/sites/office/.runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="HOME=/opt/webapps/sites/office/.sites-runtime/home"
-Environment="PORT=3000"
-ExecStart=/opt/webapps/sites/office/.runtime/bin/node /opt/webapps/sites/office/node_modules/vinext/dist/cli.js start --hostname 127.0.0.1 --port 3000
+Environment="PYTHONDONTWRITEBYTECODE=1"
+ExecStart=/opt/webapps/sites/office/mcp_server/run.sh --transport streamable-http --host 127.0.0.1 --port 8010
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20
 KillSignal=SIGINT
-UMask=0027
+UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/webapps/sites/office
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

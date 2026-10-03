@@ -1,0 +1,11 @@
+[Unit]
+Description=Monitor Office API readiness
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=2m
+AccuracySec=15s
+Unit=office-healthcheck.service
+
+[Install]
+WantedBy=timers.target
